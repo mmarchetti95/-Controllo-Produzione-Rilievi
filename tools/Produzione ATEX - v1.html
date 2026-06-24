@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Produzione Atex GR v.2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--bg:#f5f4f0;--surface:#fff;--surface2:#f0eeea;--border:#e0ddd6;--border2:#ccc9c0;--text:#1a1917;--text2:#5a5851;--text3:#9a9890;--accent:#1a5fa8;--accent-light:#e8f0f8;--green:#2d6a2d;--green-light:#e6f2e6;--red:#a82020;--red-light:#f5e8e8;--amber:#7a5200;--amber-light:#fdf3dc;--radius:8px;--radius-lg:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;height:52px;display:flex;align-items:center;gap:16px;flex-shrink:0;z-index:100}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.logo svg{color:var(--accent)}
+.header-actions{display:flex;gap:8px;margin-left:auto;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .12s}
+.btn:hover{background:var(--surface2)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:#1650a0}
+.btn-success{background:var(--green);border-color:var(--green);color:#fff}
+.btn-success:hover{background:#235a23}
+.main-layout{display:flex;flex:1;overflow:hidden}
+.sidebar{width:280px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:flex;align-items:center;justify-content:space-between}
+.sidebar-scroll{overflow-y:auto;flex:1}
+.filter-section{padding:12px 16px;border-bottom:1px solid var(--border)}
+.filter-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:5px}
+select,input[type=date]{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;cursor:pointer}
+select:last-child,input[type=date]:last-child{margin-bottom:0}
+.op-item{padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;display:flex;align-items:flex-start;gap:10px}
+.op-item:hover{background:var(--surface2)}
+.op-item.active{background:var(--accent-light)}
+.op-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.op-name{font-weight:500;font-size:13px}
+.op-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.op-count{margin-left:auto;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;color:var(--text2);flex-shrink:0}
+.content{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#map{flex:1;min-height:200px;z-index:1}
+.resize-handle{height:5px;background:var(--border);cursor:ns-resize;flex-shrink:0}
+.resize-handle:hover{background:var(--accent)}
+.bottom-panel{height:260px;min-height:120px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--border);padding:0 16px;flex-shrink:0}
+.tab{padding:9px 14px;font-size:13px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover{color:var(--text)}
+.tab-content{overflow-y:auto;flex:1;padding:12px 16px}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px}
+.metric-card{background:var(--surface2);border-radius:var(--radius);padding:10px 12px}
+.metric-label{font-size:11px;color:var(--text3);margin-bottom:4px}
+.metric-val{font-size:20px;font-weight:600;color:var(--text)}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--surface)}
+.data-table td{padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text)}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:var(--surface2)}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px}
+.badge-green{background:var(--green-light);color:var(--green)}
+.badge-amber{background:var(--amber-light);color:var(--amber)}
+.badge-blue{background:var(--accent-light);color:var(--accent)}
+#dropzone{position:absolute;inset:0;background:rgba(255,255,255,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:500;gap:20px}
+.drop-box{border:2px dashed var(--border2);border-radius:var(--radius-lg);padding:48px 60px;text-align:center;transition:border-color .2s,background .2s}
+.drop-box.drag-over{border-color:var(--accent);background:var(--accent-light)}
+.drop-icon{font-size:48px;margin-bottom:12px}
+.drop-title{font-size:18px;font-weight:600;margin-bottom:8px}
+.drop-sub{font-size:14px;color:var(--text2);margin-bottom:20px}
+.drop-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+#fileInputFolder,#fileInputZip{display:none}
+#loadingOverlay{position:fixed;inset:0;background:rgba(255,255,255,.93);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:1000;gap:12px}
+#loadingOverlay.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadingMsg{font-size:14px;color:var(--text2)}
+#loadingProgress{font-size:24px;font-weight:600}
+#debugLog{font-size:11px;color:var(--text3);max-width:400px;text-align:center;max-height:80px;overflow:hidden}
+.op-report{margin-bottom:16px}
+.op-report-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:600;font-size:14px}
+.op-color-dot{width:12px;height:12px;border-radius:50%}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.empty-state{text-align:center;padding:32px;color:var(--text3);font-size:13px}
+.leaflet-tooltip{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:12px}
+#sessionLabel{font-size:12px;color:var(--text3);display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    Produzione Atex GR
+  </div>
+  <div id="sessionLabel"></div>
+  <div class="header-actions">
+    <button class="btn" onclick="document.getElementById('fileInputFolder').click()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      Carica cartella
+    </button>
+    <button class="btn" onclick="document.getElementById('fileInputZip').click()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Carica ZIP
+    </button>
+    <button class="btn btn-success" onclick="exportReport()" id="btnExport" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Salva report HTML
+    </button>
+  </div>
+</header>
+<input type="file" id="fileInputFolder" webkitdirectory multiple>
+<input type="file" id="fileInputZip" accept=".zip">
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingProgress">0%</div>
+  <div id="loadingMsg">Lettura metadati EXIF...</div>
+  <div id="debugLog"></div>
+</div>
+<div class="main-layout">
+  <div class="sidebar">
+    <div class="filter-section">
+      <div class="filter-label">Data</div>
+      <input type="date" id="filterDate" onchange="applyFilters()">
+      <div class="filter-label" style="margin-top:8px">Ora</div>
+      <select id="filterHour" onchange="applyFilters()"><option value="all">Tutte le ore</option></select>
+    </div>
+    <div class="sidebar-header">
+      <span>Operatori</span>
+      <span id="opCount" style="font-size:12px;font-weight:500;color:var(--text2)">—</span>
+    </div>
+    <div class="sidebar-scroll" id="opList"><div class="empty-state">Carica le foto per vedere gli operatori</div></div>
+  </div>
+  <div class="content">
+    <div id="map"></div>
+    <div class="resize-handle" id="resizeHandle"></div>
+    <div class="bottom-panel">
+      <div class="tabs">
+        <div class="tab active" data-tab="metriche" onclick="switchTab('metriche')">Riepilogo</div>
+        <div class="tab" data-tab="timeline" onclick="switchTab('timeline')">Timeline</div>
+        <div class="tab" data-tab="dettaglio" onclick="switchTab('dettaglio')">Scatti</div>
+        <div class="tab" data-tab="report" onclick="switchTab('report')">Report operatori</div>
+      </div>
+      <div class="tab-content" id="tabContent"><div class="empty-state">Carica le foto per visualizzare i dati</div></div>
+    </div>
+  </div>
+</div>
+<div id="dropzone">
+  <div class="drop-box" id="dropBox">
+    <div class="drop-icon">📍</div>
+    <div class="drop-title">Carica foto da campo</div>
+    <div class="drop-sub">Trascina foto HEIC/JPG, una cartella o uno ZIP</div>
+    <div class="drop-actions">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInputFolder').click()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Seleziona cartella
+      </button>
+      <button class="btn" onclick="document.getElementById('fileInputZip').click()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Carica ZIP
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// PARSER EXIF CUSTOM — legge HEIC, HEIF, JPG direttamente
+// Strategia: cerca MM\x00\x2A o II\x2A\x00 in tutto il file
+// compatibile con la struttura ISOBMFF dei file Apple HEIC
+// ============================================================
+const ExifParser = {
+  parse(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const result = {};
+
+    // Cerca tutti i TIFF headers nel file
+    const tiffOffset = this.findTiffHeader(bytes);
+    if (tiffOffset < 0) return null;
+
+    const bigEndian = bytes[tiffOffset] === 0x4D; // MM = big endian
+    const view = new DataView(buffer, tiffOffset);
+
+    const ifd0Offset = this.readUint32(view, 4, bigEndian);
+    if (ifd0Offset > buffer.byteLength - tiffOffset) return null;
+
+    // Leggi IFD0
+    const ifd0 = this.readIFD(view, ifd0Offset, bigEndian, buffer.byteLength - tiffOffset);
+    if (!ifd0) return null;
+
+    // Make / Model
+    if (ifd0[0x010F]) result.Make = this.readASCII(view, ifd0[0x010F], bigEndian);
+    if (ifd0[0x0110]) result.Model = this.readASCII(view, ifd0[0x0110], bigEndian);
+
+    // Exif SubIFD
+    if (ifd0[0x8769] != null) {
+      const exifOff = this.getVal(ifd0[0x8769], view, bigEndian);
+      const exifIFD = this.readIFD(view, exifOff, bigEndian, buffer.byteLength - tiffOffset);
+      if (exifIFD) {
+        if (exifIFD[0x9003]) result.DateTimeOriginal = this.readASCII(view, exifIFD[0x9003], bigEndian);
+        if (exifIFD[0x9004]) result.CreateDate = this.readASCII(view, exifIFD[0x9004], bigEndian);
+        if (exifIFD[0x9010]) result.OffsetTimeOriginal = this.readASCII(view, exifIFD[0x9010], bigEndian);
+        if (exifIFD[0x9011]) result.OffsetTime = this.readASCII(view, exifIFD[0x9011], bigEndian);
+        // Serial numbers
+        if (exifIFD[0xA431]) result.SerialNumber = this.readASCII(view, exifIFD[0xA431], bigEndian);
+        if (exifIFD[0xA435]) result.LensSerialNumber = this.readASCII(view, exifIFD[0xA435], bigEndian);
+        if (exifIFD[0x9C9B]) result.XPTitle = this.readASCII(view, exifIFD[0x9C9B], bigEndian);
+      }
+    }
+
+    // GPS SubIFD
+    if (ifd0[0x8825] != null) {
+      const gpsOff = this.getVal(ifd0[0x8825], view, bigEndian);
+      const gpsIFD = this.readIFD(view, gpsOff, bigEndian, buffer.byteLength - tiffOffset);
+      if (gpsIFD) {
+        const latRef = ifd0[0x8825] != null ? this.readGPS(gpsIFD, view, bigEndian) : null;
+        const gps = this.readGPS(gpsIFD, view, bigEndian);
+        if (gps) { result.latitude = gps.lat; result.longitude = gps.lon; }
+      }
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
+  },
+
+  findTiffHeader(bytes) {
+    // Cerca MM\x00\x2A (big endian) o II\x2A\x00 (little endian)
+    for (let i = 0; i < bytes.length - 4; i++) {
+      if ((bytes[i] === 0x4D && bytes[i+1] === 0x4D && bytes[i+2] === 0x00 && bytes[i+3] === 0x2A) ||
+          (bytes[i] === 0x49 && bytes[i+1] === 0x49 && bytes[i+2] === 0x2A && bytes[i+3] === 0x00)) {
+        return i;
+      }
+    }
+    // Fallback: cerca SOI JPEG + APP1
+    for (let i = 0; i < bytes.length - 2; i++) {
+      if (bytes[i] === 0xFF && bytes[i+1] === 0xE1) {
+        // APP1 marker trovato, Exif\0\0 dovrebbe essere subito dopo
+        const exifCheck = String.fromCharCode(bytes[i+4], bytes[i+5], bytes[i+6], bytes[i+7]);
+        if (exifCheck === 'Exif') return i + 10; // skip APP1 length + "Exif\0\0"
+      }
+    }
+    return -1;
+  },
+
+  readUint32(view, offset, big) {
+    try { return big ? view.getUint32(offset) : view.getUint32(offset, true); } catch(e) { return 0; }
+  },
+  readUint16(view, offset, big) {
+    try { return big ? view.getUint16(offset) : view.getUint16(offset, true); } catch(e) { return 0; }
+  },
+
+  // Leggi IFD e restituisce mappa tag → {type, count, rawVal}
+  readIFD(view, offset, big, maxLen) {
+    try {
+      if (offset + 2 > maxLen) return null;
+      const n = this.readUint16(view, offset, big);
+      if (n > 200 || n === 0) return null;
+      const entries = {};
+      for (let i = 0; i < n; i++) {
+        const off = offset + 2 + i * 12;
+        if (off + 12 > maxLen) break;
+        const tag  = this.readUint16(view, off, big);
+        const type = this.readUint16(view, off + 2, big);
+        const cnt  = this.readUint32(view, off + 4, big);
+        const rawVal = this.readUint32(view, off + 8, big);
+        entries[tag] = {type, count: cnt, rawVal, off};
+      }
+      return entries;
+    } catch(e) { return null; }
+  },
+
+  getVal(entry, view, big) {
+    return entry.rawVal;
+  },
+
+  readASCII(view, entry, big) {
+    try {
+      const {type, count, rawVal} = entry;
+      if (type !== 2) return null;
+      let str = '';
+      if (count <= 4) {
+        // Valore inline (big-endian: byte più significativo prima)
+        const b = big
+          ? [(rawVal >>> 24) & 0xFF, (rawVal >>> 16) & 0xFF, (rawVal >>> 8) & 0xFF, rawVal & 0xFF]
+          : [rawVal & 0xFF, (rawVal >>> 8) & 0xFF, (rawVal >>> 16) & 0xFF, (rawVal >>> 24) & 0xFF];
+        for (let j = 0; j < count; j++) {
+          if (b[j] === 0) break;
+          str += String.fromCharCode(b[j]);
+        }
+      } else {
+        for (let j = 0; j < count - 1; j++) {
+          try {
+            const c = view.getUint8(rawVal + j);
+            if (c === 0) break;
+            str += String.fromCharCode(c);
+          } catch(e) { break; }
+        }
+      }
+      return str.trim() || null;
+    } catch(e) { return null; }
+  },
+
+  readGPS(gpsIFD, view, big) {
+    try {
+      const latRef = gpsIFD[1] ? this.readASCII(view, gpsIFD[1], big) : 'N';
+      const lonRef = gpsIFD[3] ? this.readASCII(view, gpsIFD[3], big) : 'E';
+      const latEntry = gpsIFD[2], lonEntry = gpsIFD[4];
+      if (!latEntry || !lonEntry) return null;
+      const lat = this.readRational3(view, latEntry.rawVal, big);
+      const lon = this.readRational3(view, lonEntry.rawVal, big);
+      if (!lat || !lon) return null;
+      const latDeg = lat[0] + lat[1]/60 + lat[2]/3600;
+      const lonDeg = lon[0] + lon[1]/60 + lon[2]/3600;
+      return {
+        lat: (latRef === 'S') ? -latDeg : latDeg,
+        lon: (lonRef === 'W') ? -lonDeg : lonDeg
+      };
+    } catch(e) { return null; }
+  },
+
+  readRational3(view, offset, big) {
+    try {
+      const coords = [];
+      for (let i = 0; i < 3; i++) {
+        const num = big ? view.getUint32(offset + i*8) : view.getUint32(offset + i*8, true);
+        const den = big ? view.getUint32(offset + i*8 + 4) : view.getUint32(offset + i*8 + 4, true);
+        coords.push(den ? num / den : 0);
+      }
+      return coords;
+    } catch(e) { return null; }
+  }
+};
+
+// ============================================================
+// STATO
+// ============================================================
+let allPhotos = [];
+let operators = {};
+let activeOperators = new Set();
+let currentTab = 'metriche';
+let map = null;
+let mapLayers = {};
+let filteredPhotos = [];
+
+const OP_COLORS = ['#1a5fa8','#d4530a','#2d6a2d','#8b2fa8','#a82020','#0d7a7a','#7a5200','#5a1f5a','#1a7a3a','#7a3a1a','#3a5a8a','#8a3a5a','#3a8a5a','#5a3a8a','#8a5a3a'];
+
+// ============================================================
+// INIT MAPPA
+// ============================================================
+function initMap() {
+  map = L.map('map', {zoomControl:true}).setView([45.0, 10.0], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19
+  }).addTo(map);
+}
+
+// ============================================================
+// INPUT HANDLERS
+// ============================================================
+document.getElementById('fileInputFolder').addEventListener('change', e => {
+  handleFiles(Array.from(e.target.files));
+  e.target.value = '';
+});
+document.getElementById('fileInputZip').addEventListener('change', e => {
+  handleZip(e.target.files[0]);
+  e.target.value = '';
+});
+
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files || []);
+  const zipFile = files.find(f => f.name.toLowerCase().endsWith('.zip'));
+  if (zipFile) { handleZip(zipFile); return; }
+  const allFiles = [];
+  async function traverse(entry) {
+    if (entry.isFile) await new Promise(res => entry.file(f => { allFiles.push(f); res(); }));
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      await new Promise(res => reader.readEntries(async entries => {
+        for (const e of entries) await traverse(e);
+        res();
+      }));
+    }
+  }
+  for (const item of Array.from(e.dataTransfer.items || [])) {
+    if (item.webkitGetAsEntry) { const ent = item.webkitGetAsEntry(); if (ent) await traverse(ent); }
+  }
+  handleFiles(allFiles.length ? allFiles : files);
+});
+
+document.getElementById('dropBox').addEventListener('dragenter', () => document.getElementById('dropBox').classList.add('drag-over'));
+document.getElementById('dropBox').addEventListener('dragleave', () => document.getElementById('dropBox').classList.remove('drag-over'));
+document.getElementById('dropBox').addEventListener('drop', () => document.getElementById('dropBox').classList.remove('drag-over'));
+
+async function handleZip(zipFile) {
+  if (!zipFile) return;
+  showLoading('Estrazione ZIP...', 0);
+  try {
+    const zip = await JSZip.loadAsync(zipFile);
+    const files = [];
+    const imageExts = ['.heic','.heif','.jpg','.jpeg','.png'];
+    const entries = Object.entries(zip.files).filter(([n,e]) => !e.dir && imageExts.some(x => n.toLowerCase().endsWith(x)));
+    let done = 0;
+    for (const [name, entry] of entries) {
+      const blob = await entry.async('blob');
+      const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
+      const mimes = {'.heic':'image/heic','.heif':'image/heif','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png'};
+      files.push(new File([blob], name.split('/').pop(), {type: mimes[ext]||'image/jpeg'}));
+      done++;
+      updateLoading(`Estrazione ZIP — ${done} / ${entries.length}`, Math.round(done/entries.length*50));
+      if (done % 20 === 0) await sleep(0);
+    }
+    await handleFiles(files);
+  } catch(err) { hideLoading(); alert('Errore ZIP: ' + err.message); }
+}
+
+async function handleFiles(files) {
+  const imageExts = ['.heic','.heif','.jpg','.jpeg','.png'];
+  const imageFiles = files.filter(f => imageExts.some(x => f.name.toLowerCase().endsWith(x)));
+  if (!imageFiles.length) { alert('Nessuna foto valida trovata (formati supportati: HEIC, HEIF, JPG, PNG)'); return; }
+
+  showLoading(`Lettura metadati EXIF — 0 / ${imageFiles.length}`, 0);
+
+  const newPhotos = [];
+  let parsed = 0, skipped = 0, noGps = 0;
+  const BATCH = 8;
+
+  for (let i = 0; i < imageFiles.length; i += BATCH) {
+    const batch = imageFiles.slice(i, i + BATCH);
+    await Promise.all(batch.map(async file => {
+      try {
+        const buf = await file.arrayBuffer();
+        const exif = ExifParser.parse(buf);
+
+        if (!exif) { skipped++; return; }
+        if (!exif.latitude || !exif.longitude) { noGps++; return; }
+
+        const lat = parseFloat(exif.latitude);
+        const lon = parseFloat(exif.longitude);
+        if (isNaN(lat) || isNaN(lon)) { noGps++; return; }
+
+        const rawDate = exif.DateTimeOriginal || exif.CreateDate;
+        if (!rawDate) { skipped++; return; }
+        const dt = parseExifDate(rawDate);
+        if (!dt || isNaN(dt.getTime())) { skipped++; return; }
+
+        const offset = exif.OffsetTimeOriginal || exif.OffsetTime || null;
+        const serial = (exif.SerialNumber || '').trim();
+        const make = (exif.Make || '').trim();
+        const model = (exif.Model || '').trim();
+        const operatorId = serial || `${make}_${model}` || 'unknown';
+        const operatorLabel = serial
+          ? `${make} ${model} [${serial.slice(-6)}]`.trim()
+          : `${make} ${model}`.trim() || 'Dispositivo sconosciuto';
+
+        newPhotos.push({ filename: file.name, dt, dtOffset: offset, lat, lon, operatorId, operatorLabel });
+        parsed++;
+      } catch(e) { skipped++; }
+    }));
+
+    const done = Math.min(i + BATCH, imageFiles.length);
+    updateLoading(
+      `Analisi EXIF — ${done} / ${imageFiles.length} (ok: ${parsed}, no GPS: ${noGps})`,
+      Math.round(done / imageFiles.length * 100)
+    );
+    await sleep(0);
+  }
+
+  document.getElementById('debugLog').textContent =
+    `Processate: ${imageFiles.length} · Con GPS: ${parsed} · Senza GPS: ${noGps} · Errori: ${skipped}`;
+
+  await sleep(300);
+
+  if (!newPhotos.length) {
+    hideLoading();
+    alert(`Nessuna foto con GPS e timestamp validi trovata.\n\nProcessate: ${imageFiles.length}\nSenza GPS: ${noGps}\nErrori di lettura: ${skipped}\n\nAssicurarsi che la localizzazione sia attiva sul dispositivo durante lo scatto.`);
+    return;
+  }
+
+  allPhotos = [...allPhotos, ...newPhotos];
+  processData();
+  hideLoading();
+  document.getElementById('dropzone').style.display = 'none';
+  document.getElementById('btnExport').style.display = 'inline-flex';
+}
+
+function parseExifDate(str) {
+  if (!str) return null;
+  // "2026:06:16 12:28:28"
+  const cleaned = str.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ============================================================
+// PROCESSING
+// ============================================================
+function processData() {
+  const knownIds = Object.keys(operators);
+  const newIds = [...new Set(allPhotos.map(p => p.operatorId))].filter(id => !knownIds.includes(id));
+  newIds.forEach((id, i) => {
+    const colorIdx = (knownIds.length + i) % OP_COLORS.length;
+    operators[id] = { id, label: allPhotos.find(p => p.operatorId === id)?.operatorLabel || id, color: OP_COLORS[colorIdx] };
+    activeOperators.add(id);
+  });
+  allPhotos.forEach(p => { p.color = operators[p.operatorId]?.color || '#888'; });
+  populateDateFilter();
+  applyFilters();
+}
+
+function populateDateFilter() {
+  const dates = [...new Set(allPhotos.map(p => p.dt.toISOString().slice(0,10)))].sort();
+  const sel = document.getElementById('filterDate');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">Tutte le date</option>' +
+    dates.map(d => `<option value="${d}"${d===cur?' selected':''}>${fmtDateIT(d)}</option>`).join('');
+  if (!cur && dates.length === 1) sel.value = dates[0];
+}
+
+function applyFilters() {
+  const dateVal = document.getElementById('filterDate').value;
+  const hourVal = document.getElementById('filterHour').value;
+  filteredPhotos = allPhotos.filter(p => {
+    if (!activeOperators.has(p.operatorId)) return false;
+    if (dateVal !== 'all' && p.dt.toISOString().slice(0,10) !== dateVal) return false;
+    if (hourVal !== 'all' && localHour(p.dt, p.dtOffset) !== parseInt(hourVal)) return false;
+    return true;
+  });
+  updateHourFilter(dateVal);
+  renderSidebar();
+  renderMap();
+  renderTab(currentTab);
+}
+
+function updateHourFilter(dateVal) {
+  const pool = dateVal === 'all' ? allPhotos : allPhotos.filter(p => p.dt.toISOString().slice(0,10) === dateVal);
+  const hours = [...new Set(pool.map(p => localHour(p.dt, p.dtOffset)))].sort((a,b)=>a-b);
+  const sel = document.getElementById('filterHour');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">Tutte le ore</option>' +
+    hours.map(h => `<option value="${h}"${String(h)===cur?' selected':''}>${h}:00–${h+1}:00</option>`).join('');
+}
+
+function localHour(dt, offset) {
+  if (!offset) return dt.getHours();
+  const m = offset.match(/([+-])(\d{2}):(\d{2})/);
+  if (!m) return dt.getHours();
+  const sign = m[1]==='+' ? 1 : -1;
+  const mins = sign * (parseInt(m[2])*60 + parseInt(m[3]));
+  return new Date(dt.getTime() + mins*60000 + dt.getTimezoneOffset()*60000).getHours();
+}
+
+function fmtTime(dt, offset) {
+  if (!offset) return dt.toTimeString().slice(0,5);
+  const m = offset.match(/([+-])(\d{2}):(\d{2})/);
+  if (!m) return dt.toTimeString().slice(0,5);
+  const sign = m[1]==='+' ? 1 : -1;
+  const mins = sign * (parseInt(m[2])*60 + parseInt(m[3]));
+  return new Date(dt.getTime() + mins*60000 + dt.getTimezoneOffset()*60000).toTimeString().slice(0,5);
+}
+
+function fmtDateIT(iso) {
+  const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`;
+}
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+function renderSidebar() {
+  const allOpIds = [...new Set(allPhotos.map(p => p.operatorId))];
+  const activeCount = allOpIds.filter(id => activeOperators.has(id)).length;
+  document.getElementById('opCount').textContent = activeCount + ' / ' + allOpIds.length;
+  document.getElementById('opList').innerHTML = allOpIds.map(id => {
+    const op = operators[id];
+    const count = allPhotos.filter(p => p.operatorId === id).length;
+    const isActive = activeOperators.has(id);
+    return `<div class="op-item${isActive?' active':''}" onclick="toggleOp('${escA(id)}')">
+      <div class="op-dot" style="background:${op.color};opacity:${isActive?1:.3}"></div>
+      <div>
+        <div class="op-name" style="opacity:${isActive?1:.5}">${esc(op.label)}</div>
+        <div class="op-meta">${esc(id.slice(0,24))}</div>
+      </div>
+      <div class="op-count">${count}</div>
+    </div>`;
+  }).join('') || '<div class="empty-state">Nessun operatore</div>';
+}
+
+function toggleOp(id) {
+  if (activeOperators.has(id)) activeOperators.delete(id); else activeOperators.add(id);
+  applyFilters();
+}
+
+// ============================================================
+// MAPPA
+// ============================================================
+const GAP_MS = 10 * 60 * 1000;
+
+function renderMap() {
+  if (!map) return;
+  Object.values(mapLayers).forEach(l => map.removeLayer(l));
+  mapLayers = {};
+  if (!filteredPhotos.length) return;
+
+  const bounds = [];
+  const opIds = [...new Set(filteredPhotos.map(p => p.operatorId))];
+
+  opIds.forEach(opId => {
+    const op = operators[opId];
+    const photos = filteredPhotos.filter(p => p.operatorId === opId).sort((a,b) => a.dt-b.dt);
+    if (!photos.length) return;
+    const group = L.layerGroup().addTo(map);
+    mapLayers[opId] = group;
+
+    for (let i = 1; i < photos.length; i++) {
+      const prev = photos[i-1], curr = photos[i];
+      if (curr.dt - prev.dt > GAP_MS) continue;
+      const dist = haversine(prev.lat, prev.lon, curr.lat, curr.lon);
+      L.polyline([[prev.lat,prev.lon],[curr.lat,curr.lon]], {color:op.color, weight:3, opacity:.8})
+        .bindTooltip(`<strong>${esc(op.label)}</strong><br>${fmtTime(prev.dt,prev.dtOffset)} → ${fmtTime(curr.dt,curr.dtOffset)}<br>Distanza: <strong>${Math.round(dist)} m</strong>`)
+        .addTo(group);
+      if (dist > 3) {
+        const mid = [(prev.lat+curr.lat)/2, (prev.lon+curr.lon)/2];
+        L.marker(mid, {icon: L.divIcon({className:'',html:`<span style="font-size:10px;background:white;border:1px solid #ddd;border-radius:3px;padding:1px 4px;color:#555;white-space:nowrap">${Math.round(dist)}m</span>`,iconAnchor:[16,8]}), interactive:false}).addTo(group);
+      }
+      bounds.push([prev.lat,prev.lon],[curr.lat,curr.lon]);
+    }
+
+    photos.forEach((p, i) => {
+      const isEdge = i===0 || i===photos.length-1;
+      const r = isEdge ? 8 : 5;
+      L.marker([p.lat,p.lon], {icon: L.divIcon({className:'',html:`<div style="width:${r*2}px;height:${r*2}px;border-radius:50%;background:${op.color};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>`,iconAnchor:[r,r]})})
+        .bindTooltip(`<strong>${esc(p.filename)}</strong><br>${esc(op.label)}<br>${fmtTime(p.dt,p.dtOffset)}<br>${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}`)
+        .addTo(group);
+      bounds.push([p.lat,p.lon]);
+    });
+
+    // Label inizio/fine
+    [photos[0], photos[photos.length-1]].forEach((p, idx) => {
+      L.marker([p.lat,p.lon], {icon: L.divIcon({className:'',html:`<div style="font-size:11px;font-weight:600;color:${op.color};text-shadow:0 0 3px white;white-space:nowrap">${idx===0?'▶':'■'} ${fmtTime(p.dt,p.dtOffset)}</div>`,iconAnchor:[0,20]}), interactive:false, zIndexOffset:1000}).addTo(group);
+    });
+  });
+
+  if (bounds.length) { try { map.fitBounds(bounds, {padding:[40,40]}); } catch(e){} }
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab===tab));
+  renderTab(tab);
+}
+
+function renderTab(tab) {
+  const el = document.getElementById('tabContent');
+  if (!filteredPhotos.length) { el.innerHTML = '<div class="empty-state">Nessun dato con i filtri selezionati</div>'; return; }
+  if (tab==='metriche') renderMetriche(el);
+  else if (tab==='timeline') renderTimeline(el);
+  else if (tab==='dettaglio') renderDettaglio(el);
+  else if (tab==='report') renderReport(el);
+}
+
+function renderMetriche(el) {
+  const sorted = [...filteredPhotos].sort((a,b)=>a.dt-b.dt);
+  const s = sorted[0], e = sorted[sorted.length-1];
+  const durMin = Math.round((e.dt-s.dt)/60000);
+  const opIds = [...new Set(filteredPhotos.map(p=>p.operatorId))];
+  let km = 0;
+  opIds.forEach(id => {
+    const ph = filteredPhotos.filter(p=>p.operatorId===id).sort((a,b)=>a.dt-b.dt);
+    for (let i=1;i<ph.length;i++) if (ph[i].dt-ph[i-1].dt<GAP_MS) km+=haversine(ph[i-1].lat,ph[i-1].lon,ph[i].lat,ph[i].lon);
+  });
+  el.innerHTML = `<div class="metrics-grid">
+    <div class="metric-card"><div class="metric-label">Foto totali</div><div class="metric-val">${filteredPhotos.length}</div><div class="metric-sub">${opIds.length} operatori</div></div>
+    <div class="metric-card"><div class="metric-label">Primo scatto</div><div class="metric-val">${fmtTime(s.dt,s.dtOffset)}</div><div class="metric-sub">${fmtDateIT(s.dt.toISOString().slice(0,10))}</div></div>
+    <div class="metric-card"><div class="metric-label">Ultimo scatto</div><div class="metric-val">${fmtTime(e.dt,e.dtOffset)}</div><div class="metric-sub">${fmtDateIT(e.dt.toISOString().slice(0,10))}</div></div>
+    <div class="metric-card"><div class="metric-label">Durata sessione</div><div class="metric-val">${durMin>=60?Math.floor(durMin/60)+'h '+durMin%60+'m':durMin+'m'}</div></div>
+    <div class="metric-card"><div class="metric-label">Distanza totale</div><div class="metric-val">${km>=1000?(km/1000).toFixed(2)+' km':Math.round(km)+' m'}</div></div>
+    <div class="metric-card"><div class="metric-label">Cadenza media</div><div class="metric-val">${durMin>0?(filteredPhotos.length/durMin*60).toFixed(1):'—'}</div><div class="metric-sub">foto/ora</div></div>
+  </div>`;
+}
+
+function renderTimeline(el) {
+  const opIds = [...new Set(filteredPhotos.map(p=>p.operatorId))];
+  let html = '';
+  opIds.forEach(id => {
+    const op = operators[id];
+    const photos = filteredPhotos.filter(p=>p.operatorId===id).sort((a,b)=>a.dt-b.dt);
+    if (!photos.length) return;
+    const tMin = photos[0].dt.getTime(), tMax = photos[photos.length-1].dt.getTime(), span = tMax-tMin||1;
+    html += `<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px;font-weight:500;color:var(--text2)">
+        <div style="width:8px;height:8px;border-radius:50%;background:${op.color}"></div>
+        ${esc(op.label)}
+        <span style="margin-left:auto;color:var(--text3)">${photos.length} foto · ${fmtTime(photos[0].dt,photos[0].dtOffset)} → ${fmtTime(photos[photos.length-1].dt,photos[photos.length-1].dtOffset)}</span>
+      </div>
+      <div style="position:relative;height:24px;background:var(--surface2);border-radius:4px">
+        ${photos.map((p,i) => {
+          const pct = ((p.dt.getTime()-tMin)/span*100).toFixed(2);
+          const edge = i===0||i===photos.length-1;
+          return `<div title="${esc(p.filename)}\n${fmtTime(p.dt,p.dtOffset)}" style="position:absolute;top:50%;left:${pct}%;transform:translate(-50%,-50%);width:${edge?14:8}px;height:${edge?14:8}px;border-radius:50%;background:${op.color};border:${edge?'2px solid white':'none'};cursor:pointer"></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html || '<div class="empty-state">Nessun dato</div>';
+}
+
+function renderDettaglio(el) {
+  const sorted = [...filteredPhotos].sort((a,b)=>a.dt-b.dt);
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Operatore</th><th>File</th><th>Ora</th><th>Data</th><th>Lat</th><th>Lon</th></tr></thead><tbody>
+    ${sorted.map(p => `<tr>
+      <td><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:${p.color};flex-shrink:0"></span>${esc(operators[p.operatorId]?.label||p.operatorId)}</span></td>
+      <td style="font-family:monospace;font-size:11px">${esc(p.filename)}</td>
+      <td>${fmtTime(p.dt,p.dtOffset)}</td>
+      <td>${fmtDateIT(p.dt.toISOString().slice(0,10))}</td>
+      <td style="font-family:monospace;font-size:11px">${p.lat.toFixed(6)}</td>
+      <td style="font-family:monospace;font-size:11px">${p.lon.toFixed(6)}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderReport(el) {
+  const opIds = [...new Set(filteredPhotos.map(p=>p.operatorId))];
+  let html = '';
+  opIds.forEach(id => {
+    const op = operators[id];
+    const photos = filteredPhotos.filter(p=>p.operatorId===id).sort((a,b)=>a.dt-b.dt);
+    if (!photos.length) return;
+    const start=photos[0], end=photos[photos.length-1];
+    const durMin = Math.round((end.dt-start.dt)/60000);
+    let km=0, pauseMin=0, sessioni=[], sessStart=photos[0];
+    for (let i=1;i<photos.length;i++) {
+      const gap = photos[i].dt-photos[i-1].dt;
+      if (gap<GAP_MS) km+=haversine(photos[i-1].lat,photos[i-1].lon,photos[i].lat,photos[i].lon);
+      else { sessioni.push({start:sessStart,end:photos[i-1],gapMin:Math.round(gap/60000)}); pauseMin+=Math.round(gap/60000); sessStart=photos[i]; }
+    }
+    sessioni.push({start:sessStart,end:photos[photos.length-1],gapMin:0});
+    const attivoMin = durMin-pauseMin;
+    const fph = attivoMin>0?(photos.length/attivoMin*60).toFixed(1):'—';
+    const kmStr = km>=1000?(km/1000).toFixed(2)+' km':Math.round(km)+' m';
+    html += `<div class="op-report">
+      <div class="op-report-header"><div class="op-color-dot" style="background:${op.color}"></div>${esc(op.label)}<span class="badge badge-blue" style="margin-left:4px">${photos.length} foto</span></div>
+      <div class="metrics-grid" style="margin-bottom:10px">
+        <div class="metric-card"><div class="metric-label">Inizio</div><div class="metric-val" style="font-size:16px">${fmtTime(start.dt,start.dtOffset)}</div></div>
+        <div class="metric-card"><div class="metric-label">Fine</div><div class="metric-val" style="font-size:16px">${fmtTime(end.dt,end.dtOffset)}</div></div>
+        <div class="metric-card"><div class="metric-label">Tempo attivo</div><div class="metric-val" style="font-size:16px">${attivoMin>=60?Math.floor(attivoMin/60)+'h '+attivoMin%60+'m':attivoMin+'m'}</div></div>
+        <div class="metric-card"><div class="metric-label">Pause &gt;10min</div><div class="metric-val" style="font-size:16px">${pauseMin>0?pauseMin+'m':'—'}</div></div>
+        <div class="metric-card"><div class="metric-label">Distanza GPS</div><div class="metric-val" style="font-size:16px">${kmStr}</div></div>
+        <div class="metric-card"><div class="metric-label">Foto/ora attiva</div><div class="metric-val" style="font-size:16px">${fph}</div></div>
+      </div>
+      <table class="data-table" style="margin-bottom:16px"><thead><tr><th>#</th><th>Inizio</th><th>Fine</th><th>Foto</th><th>Durata</th><th>Pausa dopo</th></tr></thead><tbody>
+        ${sessioni.map((s,i)=>{
+          const dur=Math.round((s.end.dt-s.start.dt)/60000);
+          const nFoto=photos.filter(p=>p.dt>=s.start.dt&&p.dt<=s.end.dt).length;
+          return `<tr><td>${i+1}</td><td>${fmtTime(s.start.dt,s.start.dtOffset)}</td><td>${fmtTime(s.end.dt,s.end.dtOffset)}</td><td>${nFoto}</td><td>${dur<1?'<1 min':dur+'m'}</td><td>${s.gapMin>0?`<span class="badge badge-amber">${s.gapMin}m</span>`:'<span class="badge badge-green">—</span>'}</td></tr>`;
+        }).join('')}
+      </tbody></table>
+    </div>`;
+  });
+  el.innerHTML = html || '<div class="empty-state">Nessun dato</div>';
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+let _SRC = '';
+async function exportReport() {
+  if (!allPhotos.length) { alert('Nessun dato da esportare'); return; }
+  const exportData = {
+    photos: allPhotos.map(p => ({
+      filename:p.filename, dt:p.dt.toISOString(), dtOffset:p.dtOffset,
+      lat:p.lat, lon:p.lon, operatorId:p.operatorId, operatorLabel:p.operatorLabel
+    })),
+    operators: Object.fromEntries(Object.entries(operators).map(([id,op])=>[id,{id:op.id,label:op.label,color:op.color}])),
+    exportedAt: new Date().toISOString()
+  };
+  // Usa _SRC: sorgente registrato via XHR al caricamento, senza fetch né outerHTML
+  const tag = '<'+'script id="exportedData" type="application/json">';
+  const endTag = '</'+'script>';
+  const dataBlock = tag + JSON.stringify(exportData) + endTag;
+  let out = _SRC
+    .replace(new RegExp('<scr'+'ipt id="exportedData"[\\s\\S]*?<\\/scr'+'ipt>','g'), '')
+    .replace(/<\/head>/i, dataBlock + '\n</head>');
+  const blob = new Blob([out], {type:'text/html;charset=utf-8'});
+  const dateStr = new Date().toISOString().slice(0,10);
+  const defaultName = 'Produzione Atex GR - Report ' + dateStr + '.html';
+  if (window.showSaveFilePicker) {
+    try {
+      const fh = await window.showSaveFilePicker({
+        suggestedName: defaultName,
+        types: [{description:'Pagina HTML', accept:{'text/html':['.html']}}]
+      });
+      const w = await fh.createWritable();
+      await w.write(blob); await w.close(); return;
+    } catch(e) { if (e.name==='AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=defaultName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+}
+
+// ============================================================
+// LOAD DATI EMBEDDED
+// ============================================================
+function loadEmbedded() {
+  const el = document.getElementById('exportedData');
+  if (!el) return false;
+  try {
+    const data = JSON.parse(el.textContent);
+    operators = {};
+    Object.entries(data.operators).forEach(([id,op]) => { operators[id]={...op}; activeOperators.add(id); });
+    allPhotos = data.photos.map(p => ({...p, dt:new Date(p.dt), color:operators[p.operatorId]?.color||'#888'}));
+    document.getElementById('sessionLabel').textContent = 'Report del ' + fmtDateIT(data.exportedAt.slice(0,10));
+    document.getElementById('sessionLabel').style.display = 'block';
+    return true;
+  } catch(e) { return false; }
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function showLoading(msg, pct) { document.getElementById('loadingOverlay').classList.add('show'); document.getElementById('loadingMsg').textContent=msg; document.getElementById('loadingProgress').textContent=(pct!=null?pct+'%':''); document.getElementById('debugLog').textContent=''; }
+function updateLoading(msg, pct) { document.getElementById('loadingMsg').textContent=msg; document.getElementById('loadingProgress').textContent=pct+'%'; }
+function hideLoading() { document.getElementById('loadingOverlay').classList.remove('show'); }
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escA(s) { return String(s||'').replace(/'/g,"\\'"); }
+
+// Resize pannello basso
+(function(){
+  const handle=document.getElementById('resizeHandle'), panel=document.querySelector('.bottom-panel');
+  let drag=false, startY, startH;
+  handle.addEventListener('mousedown',e=>{drag=true;startY=e.clientY;startH=panel.offsetHeight;document.body.style.cursor='ns-resize';e.preventDefault()});
+  document.addEventListener('mousemove',e=>{if(!drag)return;const d=startY-e.clientY;panel.style.height=Math.max(120,Math.min(600,startH+d))+'px';panel.style.minHeight='0'});
+  document.addEventListener('mouseup',()=>{drag=false;document.body.style.cursor=''});
+})();
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // XHR sincrono: funziona sia su http:// che su file://
+  try {
+    const x = new XMLHttpRequest();
+    x.open('GET', location.href, false);
+    x.send(null);
+    _SRC = (x.status === 200 || x.status === 0) ? x.responseText : '';
+  } catch(e) { _SRC = ''; }
+  // Fallback se XHR non disponibile (raro)
+  if (!_SRC) _SRC = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+  initMap();
+  if (loadEmbedded()) {
+    document.getElementById('dropzone').style.display='none';
+    document.getElementById('btnExport').style.display='inline-flex';
+    processData();
+  }
+});
+</script>
+</body>
+</html>

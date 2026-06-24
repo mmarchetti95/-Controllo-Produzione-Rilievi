@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drone Survey Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600&display=swap');
+:root{
+  --bg-0:#0a0d12;--bg-1:#10151d;--bg-2:#161d28;--bg-3:#1e2736;
+  --border:#253040;--border-bright:#2e3e54;
+  --text-0:#e8edf4;--text-1:#9aafc7;--text-2:#5c7394;
+  --accent:#00d4aa;--accent-dim:#00d4aa22;--accent2:#4d9ef7;
+  --warn:#f0a050;--danger:#e05555;
+  --mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg-0);color:var(--text-0);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0;z-index:10;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:26px;height:26px;background:var(--accent);clip-path:polygon(50% 0%,100% 35%,80% 100%,20% 100%,0% 35%);}
+.logo-text{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;}
+.logo-text span{color:var(--accent);}
+.hsep{flex:1;}
+.mode-selector{display:flex;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;padding:3px;gap:3px;}
+.mode-btn{padding:5px 14px;border:none;border-radius:4px;font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;background:transparent;color:var(--text-1);transition:all .15s;}
+.mode-btn.active{background:var(--accent);color:#000;}
+.upload-btn{display:flex;align-items:center;gap:7px;padding:7px 14px;background:var(--bg-3);border:1px solid var(--border-bright);border-radius:6px;color:var(--text-0);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;font-family:var(--sans);}
+.upload-btn:hover{border-color:var(--accent);color:var(--accent);}
+.upload-btn svg{width:14px;height:14px;flex-shrink:0;}
+
+.workspace{display:grid;grid-template-columns:280px 1fr 300px;flex:1;overflow:hidden;}
+
+.panel{background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.panel.right{border-right:none;border-left:1px solid var(--border);}
+.panel-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.panel-title{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text-2);}
+.panel-body{flex:1;overflow-y:auto;padding:12px;}
+.panel-body::-webkit-scrollbar{width:4px;}
+.panel-body::-webkit-scrollbar-thumb{background:var(--border-bright);border-radius:2px;}
+
+.layer-actions{display:flex;gap:6px;}
+.tiny-btn{padding:3px 8px;font-size:10px;font-family:var(--mono);background:var(--bg-3);border:1px solid var(--border);border-radius:4px;color:var(--text-2);cursor:pointer;transition:all .15s;}
+.tiny-btn:hover{color:var(--accent);border-color:var(--accent);}
+.layer-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;border:1px solid transparent;margin-bottom:4px;cursor:pointer;transition:all .15s;}
+.layer-item:hover{background:var(--bg-2);}
+.layer-item.on{background:var(--bg-2);border-color:var(--border-bright);}
+.layer-check{width:15px;height:15px;border:1.5px solid var(--border-bright);border-radius:3px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;}
+.layer-check.checked{background:var(--accent);border-color:var(--accent);}
+.layer-check.checked::after{content:'';width:8px;height:5px;border-left:1.5px solid #000;border-bottom:1.5px solid #000;transform:rotate(-45deg) translateY(-1px);}
+.layer-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.layer-info{flex:1;min-width:0;}
+.layer-name{font-size:11px;font-family:var(--mono);color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;}
+.layer-meta{font-size:10px;color:var(--text-2);margin-top:1px;}
+.layer-detail-btn{width:22px;height:22px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:11px;color:var(--text-2);transition:all .15s;}
+.layer-detail-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+.no-layers-msg{font-size:11px;color:var(--text-2);text-align:center;padding:20px;font-family:var(--mono);}
+.active-badge{display:inline-flex;align-items:center;background:var(--accent-dim);border:1px solid var(--accent);border-radius:10px;padding:1px 8px;font-family:var(--mono);font-size:10px;color:var(--accent);margin-left:8px;}
+
+.map-wrap{position:relative;overflow:hidden;display:flex;flex-direction:column;}
+#map{flex:1;background:var(--bg-0);}
+
+/* DROP OVERLAY */
+#drop-overlay{position:absolute;inset:0;background:var(--bg-0);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.drop-box{border:2px dashed var(--border-bright);border-radius:12px;padding:48px 64px;text-align:center;transition:all .2s;max-width:500px;}
+.drop-box.drag-over{border-color:var(--accent);background:var(--accent-dim);}
+.drop-title{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--text-0);margin-bottom:8px;}
+.drop-sub{font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:20px;}
+.drop-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.drop-btn{padding:9px 18px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;transition:all .15s;font-family:var(--sans);}
+.drop-btn.primary{background:var(--accent);border:none;color:#000;}
+.drop-btn.secondary{background:transparent;border:1px solid var(--border-bright);color:var(--text-1);}
+.drop-btn.secondary:hover{border-color:var(--accent);color:var(--accent);}
+
+/* PROGRESS OVERLAY */
+#progress-overlay{position:absolute;inset:0;background:#0a0d12f0;z-index:900;display:none;align-items:center;justify-content:center;}
+#progress-overlay.show{display:flex;}
+.prog-box{background:var(--bg-2);border:1px solid var(--border-bright);border-radius:12px;padding:28px 36px;width:440px;box-shadow:0 8px 32px #0008;}
+.prog-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.prog-spinner{width:14px;height:14px;border:2px solid var(--accent-dim);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.prog-label{font-size:11px;color:var(--text-1);margin-bottom:10px;font-family:var(--mono);min-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.prog-bar-track{height:8px;background:var(--bg-3);border-radius:4px;overflow:hidden;margin-bottom:14px;position:relative;}
+.prog-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .1s linear;width:0%;}
+.prog-pct{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:9px;color:#000;font-weight:600;}
+.prog-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
+.prog-cell{background:var(--bg-3);border-radius:6px;padding:8px 10px;}
+.prog-cell-lbl{font-size:9px;font-family:var(--mono);color:var(--text-2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;}
+.prog-cell-val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--text-0);}
+.prog-cell-val.g{color:var(--accent);}
+.prog-cell-val.w{color:var(--warn);}
+.prog-log{background:var(--bg-0);border-radius:6px;padding:8px 10px;max-height:72px;overflow:hidden;}
+.prog-log-line{font-size:10px;font-family:var(--mono);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* STATS */
+.stats-section{margin-bottom:16px;}
+.stats-section-title{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-2);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.stat-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--bg-2);}
+.stat-label{font-size:11px;color:var(--text-2);}
+.stat-value{font-family:var(--mono);font-size:12px;color:var(--text-0);font-weight:600;text-align:right;max-width:60%;}
+.stat-value.accent{color:var(--accent);}
+.stat-value.accent2{color:var(--accent2);}
+.stat-value.warn{color:var(--warn);}
+.big-stat{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+.big-stat-label{font-size:10px;color:var(--text-2);margin-bottom:4px;font-family:var(--mono);letter-spacing:.06em;}
+.big-stat-value{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--accent);line-height:1;}
+.big-stat-unit{font-size:11px;color:var(--text-2);margin-left:4px;}
+.big-stats-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:20px;text-align:center;}
+.empty-icon{width:48px;height:48px;opacity:.15;}
+.empty-text{font-size:12px;color:var(--text-2);line-height:1.6;}
+.overlap-bar-wrap{background:var(--bg-3);border-radius:3px;height:6px;margin-top:6px;overflow:hidden;}
+.overlap-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
+
+/* MODAL */
+#modal-overlay{display:none;position:fixed;inset:0;z-index:3000;background:#0009;align-items:center;justify-content:center;}
+#modal-overlay.open{display:flex;}
+.modal{background:var(--bg-1);border:1px solid var(--border-bright);border-radius:12px;width:500px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 16px 48px #0008;}
+.modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-0);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.modal-close{width:28px;height:28px;background:var(--bg-3);border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--text-2);display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s;}
+.modal-close:hover{border-color:var(--danger);color:var(--danger);}
+.modal-body{padding:20px;overflow-y:auto;}
+.modal-body::-webkit-scrollbar{width:4px;}
+.modal-body::-webkit-scrollbar-thumb{background:var(--border-bright);border-radius:2px;}
+
+.leaflet-container{background:var(--bg-0) !important;}
+.leaflet-control-zoom a{background:var(--bg-2) !important;color:var(--text-1) !important;border-color:var(--border) !important;}
+.leaflet-control-zoom a:hover{background:var(--bg-3) !important;color:var(--accent) !important;}
+.leaflet-popup-content-wrapper{background:var(--bg-2) !important;color:var(--text-0) !important;border:1px solid var(--border-bright) !important;border-radius:8px !important;box-shadow:0 4px 16px #0006 !important;font-size:12px !important;}
+.leaflet-popup-tip{background:var(--bg-2) !important;}
+.leaflet-popup-close-button{color:var(--text-2) !important;}
+</style>
+</head>
+<body>
+
+<input type="file" id="input-zip" accept=".zip" style="display:none">
+<input type="file" id="input-files" multiple accept="image/jpeg,image/jpg,.jpg,.jpeg,.JPG,.JPEG" style="display:none" webkitdirectory>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div class="logo-text">DRONE<span>SURVEY</span></div>
+  </div>
+  <div class="hsep"></div>
+  <div class="mode-selector">
+    <button class="mode-btn active" onclick="setMode('linear')">✈ Volo Lineare</button>
+    <button class="mode-btn" onclick="setMode('area')">⬡ Area Coperta</button>
+  </div>
+  <button class="upload-btn" id="export-btn" onclick="exportHTML()" style="display:none;border-color:#4d9ef7;color:#4d9ef7;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" transform="rotate(180,12,12)"/><rect x="3" y="3" width="18" height="4" rx="1"/></svg>
+    Esporta HTML
+  </button>
+  <button class="upload-btn" onclick="showDrop()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+    Carica rilievo
+  </button>
+</header>
+
+<div class="workspace">
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Layer <span id="active-count-badge"></span></span>
+      <div class="layer-actions">
+        <button class="tiny-btn" onclick="toggleAll(true)">TUTTI</button>
+        <button class="tiny-btn" onclick="toggleAll(false)">NESSUNO</button>
+      </div>
+    </div>
+    <div class="panel-body" id="layer-list">
+      <div class="no-layers-msg">Nessun rilievo caricato</div>
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+
+    <div id="drop-overlay">
+      <div class="drop-box" id="drop-box">
+        <div class="drop-title">Carica il tuo rilievo</div>
+        <div class="drop-sub">
+          Trascina qui una cartella <strong>.zip</strong> con le foto<br>
+          oppure seleziona la cartella dal tuo disco.<br>
+          <span style="color:var(--accent);font-family:var(--mono);font-size:10px;">Solo i metadati EXIF vengono letti — le foto non vengono caricate.</span>
+        </div>
+        <div class="drop-actions">
+          <button class="drop-btn primary" onclick="document.getElementById('input-zip').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Carica .zip
+          </button>
+          <button class="drop-btn secondary" onclick="document.getElementById('input-files').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Seleziona cartella
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="progress-overlay">
+      <div class="prog-box">
+        <div class="prog-title">
+          <div class="prog-spinner"></div>
+          Lettura rilievo in corso
+        </div>
+        <div class="prog-label" id="prog-label">Inizializzazione…</div>
+        <div class="prog-bar-track">
+          <div class="prog-bar-fill" id="prog-fill"></div>
+          <div class="prog-pct" id="prog-pct">0%</div>
+        </div>
+        <div class="prog-grid">
+          <div class="prog-cell"><div class="prog-cell-lbl">Elaborate</div><div class="prog-cell-val" id="prog-done">0</div></div>
+          <div class="prog-cell"><div class="prog-cell-lbl">Totali</div><div class="prog-cell-val" id="prog-total">—</div></div>
+          <div class="prog-cell"><div class="prog-cell-lbl">ETA</div><div class="prog-cell-val w" id="prog-eta">—</div></div>
+        </div>
+        <div class="prog-grid">
+          <div class="prog-cell"><div class="prog-cell-lbl">Con GPS</div><div class="prog-cell-val g" id="prog-ok">0</div></div>
+          <div class="prog-cell"><div class="prog-cell-lbl">Senza GPS</div><div class="prog-cell-val w" id="prog-skip">0</div></div>
+          <div class="prog-cell"><div class="prog-cell-lbl">foto/sec</div><div class="prog-cell-val" id="prog-speed">—</div></div>
+        </div>
+        <div class="prog-log" id="prog-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel right">
+    <div class="panel-head"><span class="panel-title">Statistiche</span></div>
+    <div class="panel-body" id="stats-panel">
+      <div class="empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div class="empty-text">Carica un rilievo per vedere le statistiche aggregate dei layer attivi.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title"></div>
+      <div class="modal-close" onclick="closeModal()">✕</div>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  EXIF PARSER — legge solo header JPEG, niente librerie
+// ══════════════════════════════════════════════════════════
+async function parseEXIF(file) {
+  try {
+    // Leggi solo i primi 256KB — basta sempre per gli header
+    const buf = await readSlice(file, 0, 262144);
+    const u8 = new Uint8Array(buf);
+
+    // Verifica JPEG
+    if (u8[0] !== 0xFF || u8[1] !== 0xD8) return null;
+
+    let exifData = null;
+    let xmpStr = null;
+    let pos = 2;
+
+    // Scansiona i segmenti APP del JPEG
+    while (pos + 4 < u8.length) {
+      if (u8[pos] !== 0xFF) break;
+      const marker = u8[pos + 1];
+      if (marker === 0xDA) break; // SOS = inizio immagine, fermiamo
+      const segLen = (u8[pos + 2] << 8) | u8[pos + 3];
+      if (segLen < 2) break;
+      const dataOff = pos + 4;
+      const dataLen = segLen - 2;
+
+      if (marker === 0xE1 && dataLen > 6) {
+        // APP1: EXIF o XMP
+        const sig = String.fromCharCode(u8[dataOff], u8[dataOff+1], u8[dataOff+2], u8[dataOff+3], u8[dataOff+4]);
+        if (sig === 'Exif\0') {
+          exifData = u8.slice(dataOff + 6, dataOff + dataLen);
+        } else if (dataLen > 29) {
+          const xsig = new TextDecoder('ascii', {fatal:false}).decode(u8.slice(dataOff, dataOff + 32));
+          if (xsig.startsWith('http://ns.adobe.com/xap/1.0/\0')) {
+            xmpStr = new TextDecoder('utf-8', {fatal:false}).decode(u8.slice(dataOff + 29, dataOff + dataLen));
+          }
+        }
+      }
+      pos += 2 + segLen;
+    }
+
+    const result = {};
+
+    // ── Parse XMP (DJI/Autel/Parrot scrivono quota e heading qui) ──
+    if (xmpStr) {
+      const xget = (keys) => {
+        for (const k of keys) {
+          // Formato: drone-dji:RelativeAltitude="-15.60" oppure <drone-dji:RelativeAltitude>-15.60</...>
+          let m = xmpStr.match(new RegExp(k + '[=:]\\s*["\']?([\\-\\d\\.]+)["\']?', 'i'));
+          if (!m) m = xmpStr.match(new RegExp('<[^>]*:?' + k + '>([\\-\\d\\.]+)<', 'i'));
+          if (m) return parseFloat(m[1]);
+        }
+        return null;
+      };
+      const ra = xget(['RelativeAltitude','drone-dji:RelativeAltitude','drone:RelativeAltitude']);
+      const aa = xget(['AbsoluteAltitude','drone-dji:AbsoluteAltitude','drone:AbsoluteAltitude']);
+      const yw = xget(['FlightYawDegree','drone-dji:FlightYawDegree','GimbalYawDegree','drone-dji:GimbalYawDegree']);
+      if (ra != null) result.altRel = ra;
+      if (aa != null) result.altAbs = aa;
+      if (yw != null) result.heading = yw;
+    }
+
+    // ── Parse EXIF TIFF IFD ──
+    if (!exifData || exifData.length < 8) {
+      return (result.altRel != null || result.altAbs != null) ? result : null;
+    }
+
+    const le = exifData[0] === 0x49; // 'II' little-endian
+    const r16 = (o) => le ? (exifData[o] | (exifData[o+1]<<8)) : ((exifData[o]<<8) | exifData[o+1]);
+    const r32 = (o) => {
+      const v = le
+        ? (exifData[o] | (exifData[o+1]<<8) | (exifData[o+2]<<16) | (exifData[o+3]<<24))
+        : ((exifData[o]<<24) | (exifData[o+1]<<16) | (exifData[o+2]<<8) | exifData[o+3]);
+      return v >>> 0;
+    };
+    const rRat = (o) => { const n=r32(o), d=r32(o+4); return d ? n/d : 0; };
+    const rAscii = (o, len) => {
+      let s = '';
+      for (let i = 0; i < len; i++) {
+        const c = exifData[o+i];
+        if (c === 0) break;
+        s += String.fromCharCode(c);
+      }
+      return s.trim();
+    };
+
+    if (r16(2) !== 42) return null; // magic
+    const ifd0start = r32(4);
+
+    // Leggi IFD
+    const readIFD = (start) => {
+      const tags = {};
+      if (start + 2 > exifData.length) return tags;
+      const n = r16(start);
+      for (let i = 0; i < n && i < 300; i++) {
+        const e = start + 2 + i * 12;
+        if (e + 12 > exifData.length) break;
+        const tag = r16(e);
+        const type = r16(e+2);
+        const cnt = r32(e+4);
+        const typeSz = [0,1,1,2,4,8,1,1,2,4,8,4,8];
+        const tsz = (type < typeSz.length ? typeSz[type] : 1) * cnt;
+        const voff = tsz <= 4 ? e+8 : r32(e+8);
+        if (voff + tsz > exifData.length && tsz > 4) continue;
+
+        let val = null;
+        if (type === 2) { // ASCII
+          val = rAscii(voff, cnt);
+        } else if (type === 5) { // RATIONAL array
+          val = [];
+          for (let j = 0; j < cnt; j++) val.push(rRat(voff + j*8));
+          if (cnt === 1) val = val[0];
+        } else if (type === 3 || type === 4) { // SHORT/LONG
+          if (cnt === 1) {
+            val = type === 3 ? r16(tsz<=4?e+8:voff) : r32(tsz<=4?e+8:voff);
+          } else {
+            val = [];
+            for (let j = 0; j < cnt; j++) val.push(type===3 ? r16(voff+j*2) : r32(voff+j*4));
+          }
+        } else if (type === 1) { // BYTE
+          if (cnt === 1) val = exifData[tsz<=4?e+8:voff];
+        }
+        tags[tag] = val;
+      }
+      return tags;
+    };
+
+    const ifd0 = readIFD(ifd0start);
+
+    // Make / Model
+    if (ifd0[0x010F]) result.make = String(ifd0[0x010F]);
+    if (ifd0[0x0110]) result.model = String(ifd0[0x0110]);
+
+    // Sub-EXIF (DateTimeOriginal)
+    if (ifd0[0x8769]) {
+      const sub = readIFD(ifd0[0x8769]);
+      if (sub[0x9003]) {
+        const s = String(sub[0x9003]);
+        const m = s.match(/(\d{4}):(\d{2}):(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
+        if (m) result.ts = new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+      }
+    }
+
+    // GPS IFD
+    if (ifd0[0x8825]) {
+      const gps = readIFD(ifd0[0x8825]);
+      // 0x0001=LatRef, 0x0002=Lat, 0x0003=LonRef, 0x0004=Lon, 0x0006=Alt
+      const latRef = gps[1] != null ? (typeof gps[1]==='number' ? String.fromCharCode(gps[1]) : String(gps[1])[0]) : 'N';
+      const lonRef = gps[3] != null ? (typeof gps[3]==='number' ? String.fromCharCode(gps[3]) : String(gps[3])[0]) : 'E';
+
+      if (gps[2] && Array.isArray(gps[2]) && gps[2].length >= 3) {
+        let lat = gps[2][0] + gps[2][1]/60 + gps[2][2]/3600;
+        if (latRef === 'S') lat = -lat;
+        result.lat = lat;
+      }
+      if (gps[4] && Array.isArray(gps[4]) && gps[4].length >= 3) {
+        let lon = gps[4][0] + gps[4][1]/60 + gps[4][2]/3600;
+        if (lonRef === 'W') lon = -lon;
+        result.lon = lon;
+      }
+      if (gps[6] != null) result.altGPS = typeof gps[6]==='number' ? gps[6] : (Array.isArray(gps[6]) ? gps[6][0] : null);
+    }
+
+    return (result.lat && result.lon) ? result : null;
+  } catch(e) {
+    console.warn('EXIF parse error:', e.message);
+    return null;
+  }
+}
+
+function readSlice(file, start, end) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file.slice(start, end));
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════
+const COLORS = ['#00d4aa','#4d9ef7','#f0a050','#e05555','#b57bee','#50d0f0','#f7c948','#7bee8a','#f76da0','#a0c4ff'];
+let layers = {}, layerCnt = 0, mode = 'linear';
+
+// ══════════════════════════════════════════════════════════
+//  MAP
+// ══════════════════════════════════════════════════════════
+const map = L.map('map', {zoomControl:true, preferCanvas:true}).setView([41.9,12.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OSM', maxZoom:21}).addTo(map);
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.mode-btn').forEach((b,i) => b.classList.toggle('active', i===0?m==='linear':m==='area'));
+  redrawAll();
+  updateStats();
+}
+
+// ══════════════════════════════════════════════════════════
+//  DROP / INPUT
+// ══════════════════════════════════════════════════════════
+function showDrop() { document.getElementById('drop-overlay').style.display = 'flex'; }
+function hideDrop() { document.getElementById('drop-overlay').style.display = 'none'; }
+
+const dropBox = document.getElementById('drop-box');
+dropBox.addEventListener('dragover', e => { e.preventDefault(); dropBox.classList.add('drag-over'); });
+dropBox.addEventListener('dragleave', () => dropBox.classList.remove('drag-over'));
+dropBox.addEventListener('drop', e => {
+  e.preventDefault(); dropBox.classList.remove('drag-over');
+  const files = [...e.dataTransfer.files];
+  const zip = files.find(f => f.name.toLowerCase().endsWith('.zip'));
+  if (zip) runZip(zip);
+  else { const imgs = files.filter(isJpeg); if (imgs.length) runFiles(imgs); }
+});
+
+document.getElementById('input-zip').addEventListener('change', e => { if (e.target.files[0]) runZip(e.target.files[0]); e.target.value=''; });
+document.getElementById('input-files').addEventListener('change', e => {
+  const f=[...e.target.files].filter(isJpeg);
+  if (!f.length) return;
+  // Mostra subito feedback visivo — importante su condivisioni di rete lente (VPN/fileserver)
+  // dove il browser impiega secondi prima di avere i File objects pronti
+  hideDrop();
+  showScanStart(f.length);
+  // Piccolo delay per permettere al DOM di aggiornarsi prima di iniziare l'I/O
+  setTimeout(() => runFiles(f), 80);
+  e.target.value='';
+});
+
+function isJpeg(f) { return /\.(jpe?g)$/i.test(f.name); }
+
+// ══════════════════════════════════════════════════════════
+//  PROGRESS
+// ══════════════════════════════════════════════════════════
+let pStart=0, pDone=0, pTotal=0, pOk=0, pSkip=0;
+
+// Feedback immediato appena l'utente conferma la selezione cartella
+// (prima ancora che il browser abbia letto i file dal disco/network)
+function showScanStart(count) {
+  document.getElementById('progress-overlay').classList.add('show');
+  document.getElementById('prog-label').textContent = 'Scansione cartella in corso…';
+  document.getElementById('prog-fill').style.width = '0%';
+  document.getElementById('prog-pct').textContent = '0%';
+  document.getElementById('prog-total').textContent = count > 0 ? count : '…';
+  document.getElementById('prog-done').textContent = '0';
+  document.getElementById('prog-ok').textContent = '0';
+  document.getElementById('prog-skip').textContent = '0';
+  document.getElementById('prog-eta').textContent = '…';
+  document.getElementById('prog-speed').textContent = '…';
+  document.getElementById('prog-log').innerHTML = '<div class="prog-log-line" style="color:var(--accent)">⟳ Accesso ai file in corso (VPN/rete lenta?)…</div>';
+}
+
+function initProgress(total) {
+  pStart=Date.now(); pDone=0; pTotal=total; pOk=0; pSkip=0;
+  document.getElementById('progress-overlay').classList.add('show');
+  ['prog-done','prog-ok','prog-skip'].forEach(id => document.getElementById(id).textContent='0');
+  document.getElementById('prog-total').textContent = total;
+  document.getElementById('prog-eta').textContent = '—';
+  document.getElementById('prog-speed').textContent = '—';
+  document.getElementById('prog-fill').style.width = '0%';
+  document.getElementById('prog-pct').textContent = '0%';
+  document.getElementById('prog-log').innerHTML = '';
+  document.getElementById('prog-label').textContent = 'Avvio…';
+}
+
+function tickProg(name, hasGps) {
+  pDone++;
+  if (hasGps) pOk++; else pSkip++;
+  const pct = Math.round(pDone/pTotal*100);
+  document.getElementById('prog-fill').style.width = pct+'%';
+  document.getElementById('prog-pct').textContent = pct+'%';
+  document.getElementById('prog-done').textContent = pDone;
+  document.getElementById('prog-ok').textContent = pOk;
+  document.getElementById('prog-skip').textContent = pSkip;
+  document.getElementById('prog-label').textContent = pDone+'/'+pTotal+' — '+name;
+  const elapsed = (Date.now()-pStart)/1000;
+  if (elapsed > 0.5) {
+    const spd = pDone/elapsed;
+    const eta = Math.max(0, Math.round((pTotal-pDone)/spd));
+    document.getElementById('prog-speed').textContent = spd.toFixed(1);
+    document.getElementById('prog-eta').textContent = eta > 0 ? fmtDur(eta) : '<1s';
+  }
+  const log = document.getElementById('prog-log');
+  const d = document.createElement('div');
+  d.className = 'prog-log-line';
+  d.style.color = hasGps ? 'var(--accent)' : 'var(--warn)';
+  d.textContent = (hasGps?'✓ ':'✗ ') + name;
+  log.insertBefore(d, log.firstChild);
+  while (log.children.length > 5) log.removeChild(log.lastChild);
+}
+
+function endProgress() {
+  document.getElementById('prog-label').textContent = '✓ Completato — ' + pOk + ' foto con GPS caricate';
+  document.getElementById('prog-fill').style.width = '100%';
+  document.getElementById('prog-pct').textContent = '100%';
+  setTimeout(() => document.getElementById('progress-overlay').classList.remove('show'), 1200);
+}
+
+function yieldUI() { return new Promise(r => setTimeout(r, 0)); }
+
+// ══════════════════════════════════════════════════════════
+//  GROUPING HELPER
+// ══════════════════════════════════════════════════════════
+// Dato un path relativo tipo "Rilievo/AreaNord/Volo01/DJI_001.JPG"
+// ritorna il folder path "Rilievo/AreaNord/Volo01"
+// Se il file è nella root ritorna il nome della root stessa
+function getFolder(relPath) {
+  const parts = relPath.replace(/\\/g, '/').split('/');
+  if (parts.length <= 1) return '(root)';
+  return parts.slice(0, -1).join('/');
+}
+
+// Rimuove il primo segmento (nome cartella root dello zip o della selezione)
+function stripRoot(relPath) {
+  const parts = relPath.replace(/\\/g, '/').split('/');
+  return parts.length > 1 ? parts.slice(1).join('/') : parts[0];
+}
+
+// ══════════════════════════════════════════════════════════
+//  ZIP
+// ══════════════════════════════════════════════════════════
+async function runZip(zipFile) {
+  hideDrop();
+  try {
+    document.getElementById('prog-label').textContent = 'Apertura zip…';
+    document.getElementById('progress-overlay').classList.add('show');
+
+    const zip = await JSZip.loadAsync(zipFile);
+    const entries = Object.values(zip.files).filter(f => !f.dir && isJpeg({name:f.name}));
+
+    if (!entries.length) {
+      alert('Nessuna immagine JPEG trovata nello zip.');
+      document.getElementById('progress-overlay').classList.remove('show');
+      return;
+    }
+
+    initProgress(entries.length);
+
+    const groups = {};
+    entries.forEach(entry => {
+      const stripped = stripRoot(entry.name);
+      const folder = getFolder(stripped);
+      if (!groups[folder]) groups[folder] = [];
+      const fname = entry.name.split('/').pop();
+      groups[folder].push({entry, fname, stripped});
+    });
+
+    const layerData = {};
+    for (const [folder, items] of Object.entries(groups)) {
+      const photos = [];
+      for (const {entry, fname} of items) {
+        // Crea un File-like object leggendo solo i primi 256KB
+        const fullBlob = await entry.async('blob');
+        const sliced = fullBlob.slice(0, 262144, 'image/jpeg');
+        // Wrappa in File per compatibilità con parseEXIF
+        const fakeFile = new File([sliced], fname, {type:'image/jpeg'});
+        const exif = await parseEXIF(fakeFile);
+        const ok = !!(exif && exif.lat && exif.lon);
+        if (ok) photos.push(buildPhoto(exif, fname));
+        tickProg(fname, ok);
+        if (pDone % 20 === 0) await yieldUI();
+      }
+      if (photos.length) layerData[folder] = photos;
+    }
+
+    addLayers(layerData);
+    endProgress();
+  } catch(e) {
+    console.error(e);
+    alert('Errore zip: ' + e.message);
+    document.getElementById('progress-overlay').classList.remove('show');
+    showDrop();
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  FILES (cartella selezionata)
+// ══════════════════════════════════════════════════════════
+async function runFiles(files) {
+  hideDrop();
+  initProgress(files.length);
+
+  const groups = {};
+  files.forEach(f => {
+    const rel = f.webkitRelativePath || f.name;
+    const stripped = stripRoot(rel);
+    const folder = getFolder(stripped);
+    if (!groups[folder]) groups[folder] = [];
+    groups[folder].push(f);
+  });
+
+  const layerData = {};
+  for (const [folder, flist] of Object.entries(groups)) {
+    const photos = [];
+    for (const f of flist) {
+      const exif = await parseEXIF(f);
+      const ok = !!(exif && exif.lat && exif.lon);
+      if (ok) photos.push(buildPhoto(exif, f.name));
+      tickProg(f.name, ok);
+      if (pDone % 20 === 0) await yieldUI();
+    }
+    if (photos.length) layerData[folder] = photos;
+  }
+
+  addLayers(layerData);
+  endProgress();
+}
+
+function buildPhoto(exif, fname) {
+  const alt = exif.altRel != null ? exif.altRel
+            : exif.altAbs != null ? exif.altAbs
+            : exif.altGPS != null ? exif.altGPS : null;
+  return {
+    lat: exif.lat,
+    lon: exif.lon,
+    alt,
+    ts: exif.ts || null,
+    model: [exif.make, exif.model].filter(Boolean).join(' ') || null,
+    heading: exif.heading || null,
+    fname: fname || ''
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+//  LAYERS
+// ══════════════════════════════════════════════════════════
+function addLayers(data) {
+  const keys = Object.keys(data);
+  if (!keys.length) {
+    alert('Nessuna foto con GPS trovata.\n\nLe fotocamere dei droni DJI/Autel scrivono le coordinate GPS nei metadati EXIF/XMP.\nVerifica che il GPS del drone fosse attivo durante il rilievo.');
+    showDrop();
+    return;
+  }
+
+  for (const [path, photos] of Object.entries(data)) {
+    const id = 'L' + (++layerCnt);
+    const color = COLORS[(layerCnt-1) % COLORS.length];
+    const sorted = [...photos].sort((a,b) => (a.ts&&b.ts) ? a.ts-b.ts : 0);
+    const group = L.featureGroup().addTo(map);
+    layers[id] = {id, path, photos:sorted, visible:true, color, group};
+    drawLayer(layers[id]);
+  }
+  renderList();
+  fitAll();
+  updateStats();
+  document.getElementById('export-btn').style.display = 'flex';
+}
+
+// ── Disegna un layer sulla mappa (usa preferCanvas per performance) ──
+function drawLayer(lyr) {
+  lyr.group.clearLayers();
+  if (!lyr.visible || !lyr.photos.length) return;
+
+  const pts = lyr.photos;
+  const coords = pts.map(p => [p.lat, p.lon]);
+
+  // Polilinea / poligono (PRIMA dei marker, così stanno sotto)
+  if (mode === 'linear' && coords.length > 1) {
+    L.polyline(coords, {color:lyr.color, weight:2, opacity:.85, dashArray:'8,5'}).addTo(lyr.group);
+  } else if (mode === 'area' && coords.length > 2) {
+    const hull = convexHull(coords);
+    if (hull.length > 2) L.polygon(hull, {color:lyr.color, fillColor:lyr.color, fillOpacity:.1, weight:2}).addTo(lyr.group);
+  }
+
+  // Marker circolari leggeri (SVG inline, niente popup prebuilding)
+  pts.forEach((p, i) => {
+    const icon = L.divIcon({
+      html: `<div style="width:9px;height:9px;background:${lyr.color};border:1.5px solid rgba(255,255,255,0.4);border-radius:50%;box-shadow:0 0 4px ${lyr.color}99;"></div>`,
+      className: '', iconSize: [9,9], iconAnchor: [4,4]
+    });
+    // Popup costruito on-demand al click (non prebuilding = molto più veloce)
+    L.marker([p.lat, p.lon], {icon})
+      .bindPopup(() => buildPopup(p, i+1, lyr.path))
+      .addTo(lyr.group);
+  });
+}
+
+function redrawAll() { Object.values(layers).forEach(drawLayer); }
+
+function toggleLayer(id) {
+  layers[id].visible = !layers[id].visible;
+  drawLayer(layers[id]);
+  renderList();
+  updateStats();
+}
+function toggleAll(state) {
+  Object.values(layers).forEach(l => { l.visible = state; drawLayer(l); });
+  renderList();
+  updateStats();
+}
+function fitAll() {
+  const pts = Object.values(layers).filter(l=>l.visible).flatMap(l=>l.photos.map(p=>[p.lat,p.lon]));
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), {padding:[40,40], maxZoom:18});
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER LIST
+// ══════════════════════════════════════════════════════════
+function renderList() {
+  const el = document.getElementById('layer-list');
+  const ids = Object.keys(layers);
+  if (!ids.length) {
+    el.innerHTML = '<div class="no-layers-msg">Nessun rilievo caricato</div>';
+    document.getElementById('active-count-badge').innerHTML = '';
+    return;
+  }
+  const on = ids.filter(id => layers[id].visible).length;
+  document.getElementById('active-count-badge').innerHTML = `<span class="active-badge">${on}/${ids.length}</span>`;
+
+  el.innerHTML = ids.map(id => {
+    const l = layers[id];
+    const ts = l.photos.filter(p=>p.ts);
+    const dur = ts.length>1 ? fmtDur((ts[ts.length-1].ts - ts[0].ts)/1000) : '—';
+    return `<div class="layer-item ${l.visible?'on':''}">
+      <div class="layer-check ${l.visible?'checked':''}" onclick="toggleLayer('${id}');event.stopPropagation()"></div>
+      <div class="layer-dot" style="background:${l.color}"></div>
+      <div class="layer-info">
+        <div class="layer-name" title="${l.path}">${l.path}</div>
+        <div class="layer-meta">${l.photos.length} foto · ${dur}</div>
+      </div>
+      <div class="layer-detail-btn" onclick="openDetail('${id}');event.stopPropagation()" title="Dettaglio">⊞</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  STATS
+// ══════════════════════════════════════════════════════════
+function calcLayerStats(l) {
+  const photos = l.photos;
+  const ts = photos.filter(p=>p.ts);
+  const alt = photos.filter(p=>p.alt!=null);
+  const tStart = ts[0]?.ts, tEnd = ts[ts.length-1]?.ts;
+  const sorted = ts; // già ordinati al caricamento
+  let linKm = 0;
+  for (let i=1; i<sorted.length; i++) linKm += haversine(sorted[i-1], sorted[i]);
+  const coords = photos.map(p=>[p.lat,p.lon]);
+  const hull = coords.length>2 ? convexHull(coords) : [];
+  const areaM2 = hull.length>2 ? polygonArea(hull) : 0;
+  const avgAlt = alt.length ? alt.reduce((s,p)=>s+p.alt,0)/alt.length : null;
+  const models = [...new Set(photos.map(p=>p.model).filter(Boolean))];
+  return {tStart, tEnd, dur:tStart&&tEnd?(tEnd-tStart)/1000:null, n:photos.length, avgAlt,
+    minAlt:alt.length?Math.min(...alt.map(p=>p.alt)):null,
+    maxAlt:alt.length?Math.max(...alt.map(p=>p.alt)):null,
+    linKm, areaM2, models};
+}
+
+function updateStats() {
+  const panel = document.getElementById('stats-panel');
+  const active = Object.values(layers).filter(l=>l.visible);
+  if (!active.length) {
+    panel.innerHTML = `<div class="empty-state"><svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div class="empty-text">Attiva almeno un layer per vedere le statistiche.</div></div>`;
+    return;
+  }
+
+  const all = active.flatMap(l=>l.photos);
+  const allTS = all.filter(p=>p.ts).sort((a,b)=>a.ts-b.ts);
+  const allAlt = all.filter(p=>p.alt!=null);
+  const tStart = allTS[0]?.ts, tEnd = allTS[allTS.length-1]?.ts;
+  const dur = tStart&&tEnd?(tEnd-tStart)/1000:null;
+  const avgAlt = allAlt.length ? allAlt.reduce((s,p)=>s+p.alt,0)/allAlt.length : null;
+  const models = [...new Set(all.map(p=>p.model).filter(Boolean))];
+
+  let totalLin = 0;
+  active.forEach(l => {
+    const s = l.photos.filter(p=>p.ts);
+    for (let i=1;i<s.length;i++) totalLin += haversine(s[i-1],s[i]);
+  });
+
+  let totalArea = 0;
+  active.forEach(l => {
+    const c = l.photos.map(p=>[p.lat,p.lon]);
+    if (c.length>2) { const h=convexHull(c); totalArea += polygonArea(h); }
+  });
+
+  const avgDist = all.length>1 ? totalLin*1000/Math.max(all.length-1,1) : null;
+  const fovG = avgAlt ? avgAlt*1.2 : null;
+  const overlap = fovG&&avgDist ? Math.max(0,Math.min(100,(1-avgDist/fovG)*100)) : null;
+
+  const linStr = totalLin>1 ? totalLin.toFixed(3)+' km' : (totalLin*1000).toFixed(0)+' m';
+
+  panel.innerHTML = `
+  <div class="stats-section">
+    <div class="stats-section-title">Riepilogo — ${active.length} layer attiv${active.length===1?'o':'i'}</div>
+    <div class="big-stats-row">
+      <div class="big-stat"><div class="big-stat-label">FOTO TOTALI</div><div class="big-stat-value">${all.length}<span class="big-stat-unit">img</span></div></div>
+      <div class="big-stat"><div class="big-stat-label">DURATA</div><div class="big-stat-value" style="font-size:16px;">${dur!=null?fmtDur(dur):'—'}</div></div>
+    </div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Tempo</div>
+    <div class="stat-row"><span class="stat-label">Inizio</span><span class="stat-value">${tStart?fmtTime(tStart):'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Fine</span><span class="stat-value">${tEnd?fmtTime(tEnd):'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Data</span><span class="stat-value">${tStart?fmtDate(tStart):'—'}</span></div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Quota</div>
+    <div class="stat-row"><span class="stat-label">Media</span><span class="stat-value accent">${avgAlt!=null?avgAlt.toFixed(1)+' m':'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Min</span><span class="stat-value">${allAlt.length?Math.min(...allAlt.map(p=>p.alt)).toFixed(1)+' m':'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Max</span><span class="stat-value">${allAlt.length?Math.max(...allAlt.map(p=>p.alt)).toFixed(1)+' m':'—'}</span></div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Geometria — ${mode==='linear'?'Volo Lineare':'Area Coperta'}</div>
+    ${mode==='linear'
+      ? `<div class="stat-row"><span class="stat-label">Percorso totale</span><span class="stat-value accent2">${linStr}</span></div>`
+      : `<div class="stat-row"><span class="stat-label">Area coperta</span><span class="stat-value accent2" style="max-width:70%;">${fmtArea(totalArea)}</span></div>`}
+  </div>
+  ${overlap!=null?`
+  <div class="stats-section">
+    <div class="stats-section-title">Overlap stimato</div>
+    <div class="stat-row"><span class="stat-label">Forward overlap</span><span class="stat-value warn">${overlap.toFixed(0)}%</span></div>
+    <div class="overlap-bar-wrap"><div class="overlap-bar-fill" style="width:${overlap}%;background:${overlap>60?'var(--accent)':overlap>40?'var(--warn)':'var(--danger)'}"></div></div>
+  </div>`:''}
+  ${models.length?`
+  <div class="stats-section">
+    <div class="stats-section-title">Strumentazione</div>
+    ${models.map(m=>`<div class="stat-row"><span class="stat-label">Camera</span><span class="stat-value" style="font-size:10px;">${m}</span></div>`).join('')}
+  </div>`:''}`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  POPUP
+// ══════════════════════════════════════════════════════════
+function buildPopup(p, idx, layerPath) {
+  return `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.9;min-width:210px;">
+    <div style="color:#00d4aa;font-weight:700;margin-bottom:4px;">Foto #${idx}</div>
+    <div style="color:#5c7394;font-size:9px;margin-bottom:8px;word-break:break-all;">${layerPath}</div>
+    <div><span style="color:#5c7394;">Orario </span>${p.ts?p.ts.toLocaleString('it-IT'):'—'}</div>
+    <div><span style="color:#5c7394;">GPS </span>${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</div>
+    <div><span style="color:#5c7394;">Quota </span>${p.alt!=null?p.alt.toFixed(1)+' m':'—'}</div>
+    <div><span style="color:#5c7394;">Heading </span>${p.heading!=null?p.heading.toFixed(1)+'°':'—'}</div>
+    <div><span style="color:#5c7394;">Camera </span>${p.model||'—'}</div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  MODAL DETAIL
+// ══════════════════════════════════════════════════════════
+function openDetail(id) {
+  const l = layers[id];
+  const s = calcLayerStats(l);
+  const linStr = s.linKm>1 ? s.linKm.toFixed(3)+' km' : (s.linKm*1000).toFixed(0)+' m';
+
+  document.getElementById('modal-title').textContent = l.path;
+  document.getElementById('modal-body').innerHTML = `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+    <div class="big-stat"><div class="big-stat-label">FOTO</div><div class="big-stat-value">${s.n}</div></div>
+    <div class="big-stat"><div class="big-stat-label">DURATA</div><div class="big-stat-value" style="font-size:16px;">${s.dur!=null?fmtDur(s.dur):'—'}</div></div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Tempo</div>
+    <div class="stat-row"><span class="stat-label">Inizio</span><span class="stat-value">${s.tStart?fmtTime(s.tStart):'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Fine</span><span class="stat-value">${s.tEnd?fmtTime(s.tEnd):'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Data</span><span class="stat-value">${s.tStart?fmtDate(s.tStart):'—'}</span></div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Geometria</div>
+    <div class="stat-row"><span class="stat-label">Percorso</span><span class="stat-value accent2">${linStr}</span></div>
+    <div class="stat-row"><span class="stat-label">Area coperta</span><span class="stat-value accent2" style="max-width:70%;">${fmtArea(s.areaM2)}</span></div>
+  </div>
+  <div class="stats-section">
+    <div class="stats-section-title">Quota</div>
+    <div class="stat-row"><span class="stat-label">Media</span><span class="stat-value accent">${s.avgAlt!=null?s.avgAlt.toFixed(1)+' m':'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Min</span><span class="stat-value">${s.minAlt!=null?s.minAlt.toFixed(1)+' m':'—'}</span></div>
+    <div class="stat-row"><span class="stat-label">Max</span><span class="stat-value">${s.maxAlt!=null?s.maxAlt.toFixed(1)+' m':'—'}</span></div>
+  </div>
+  ${s.models.length?`
+  <div class="stats-section">
+    <div class="stats-section-title">Camera</div>
+    ${s.models.map(m=>`<div class="stat-row"><span class="stat-label">Modello</span><span class="stat-value" style="font-size:10px;">${m}</span></div>`).join('')}
+  </div>`:''}
+  <div class="stats-section">
+    <div class="stats-section-title">Layer</div>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;">
+      <div style="width:12px;height:12px;border-radius:50%;background:${l.color};"></div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text-1)">${l.color}</span>
+    </div>
+  </div>`;
+
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+document.getElementById('modal-overlay').addEventListener('click', e => { if(e.target===document.getElementById('modal-overlay')) closeModal(); });
+
+// ══════════════════════════════════════════════════════════
+//  EXPORT — genera HTML standalone con dati incorporati
+// ══════════════════════════════════════════════════════════
+async function exportHTML() {
+  const btn = document.getElementById('export-btn');
+  btn.textContent = '⟳ Generazione…';
+  btn.style.opacity = '0.6';
+  btn.style.pointerEvents = 'none';
+
+  await yieldUI();
+
+  try {
+    // Serializza tutti i layer come JSON (solo dati GPS/EXIF, niente immagini)
+    const exportData = Object.values(layers).map(l => ({
+      id: l.id,
+      path: l.path,
+      color: l.color,
+      visible: l.visible,
+      photos: l.photos.map(p => ({
+        lat: p.lat, lon: p.lon,
+        alt: p.alt,
+        ts: p.ts ? p.ts.toISOString() : null,
+        model: p.model,
+        heading: p.heading,
+        fname: p.fname
+      }))
+    }));
+
+    // Legge il sorgente attuale della pagina e inietta i dati
+    const src = document.documentElement.outerHTML;
+
+    // Rimuove elementi UI non necessari nell'export (drop overlay, progress)
+    // e inietta i dati come script di bootstrap
+    const dataScript = `<script id="__exported_data__">
+(function(){
+  const EXPORTED_LAYERS = ${JSON.stringify(exportData)};
+  window.__PRELOADED_LAYERS__ = EXPORTED_LAYERS;
+})();
+<\/script>`;
+
+    // Inserisce lo script prima del tag </head>
+    let exportSrc = src.replace('</head>', dataScript + '</head>');
+
+    // Modifica la pagina esportata: nasconde drop overlay, mostra subito mappa
+    exportSrc = exportSrc.replace(
+      'id="drop-overlay"',
+      'id="drop-overlay" style="display:none!important"'
+    );
+
+    // Crea file e scarica
+    const dateStr = new Date().toISOString().slice(0,10);
+    const fname = `drone_survey_${dateStr}.html`;
+    const blob = new Blob([exportSrc], {type:'text/html;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; a.click();
+    URL.revokeObjectURL(url);
+
+  } catch(e) {
+    alert('Errore esportazione: ' + e.message);
+  }
+
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" transform="rotate(180,12,12)"/><rect x="3" y="3" width="18" height="4" rx="1"/></svg> Esporta HTML`;
+  btn.style.opacity = '1';
+  btn.style.pointerEvents = 'auto';
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOOTSTRAP — carica dati pre-iniettati se presenti (modalità export)
+// ══════════════════════════════════════════════════════════
+(function bootstrapExported() {
+  if (!window.__PRELOADED_LAYERS__) return;
+  const data = {};
+  window.__PRELOADED_LAYERS__.forEach(l => {
+    const photos = l.photos.map(p => ({
+      ...p,
+      ts: p.ts ? new Date(p.ts) : null
+    }));
+    data[l.path] = photos;
+    // Ripristina anche colore e visibilità originali dopo addLayers
+  });
+
+  // Usa addLayers normalmente, poi ripristina colori originali
+  const origColors = {};
+  window.__PRELOADED_LAYERS__.forEach(l => { origColors[l.path] = l.color; });
+
+  // Aspetta che la mappa sia pronta
+  setTimeout(() => {
+    addLayers(data);
+    // Ripristina colori e visibilità originali
+    Object.values(layers).forEach(l => {
+      if (origColors[l.path]) { l.color = origColors[l.path]; drawLayer(l); }
+    });
+    renderList();
+    updateStats();
+    document.getElementById('export-btn').style.display = 'flex';
+  }, 100);
+})();
+
+// ══════════════════════════════════════════════════════════
+//  GEOMETRY
+// ══════════════════════════════════════════════════════════
+function haversine(a, b) {
+  const R=6371, φ1=a.lat*Math.PI/180, φ2=b.lat*Math.PI/180;
+  const dφ=(b.lat-a.lat)*Math.PI/180, dλ=(b.lon-a.lon)*Math.PI/180;
+  const x=Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function convexHull(pts) {
+  if (pts.length<3) return pts;
+  const p=[...pts].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cross=(O,A,B)=>(A[0]-O[0])*(B[1]-O[1])-(A[1]-O[1])*(B[0]-O[0]);
+  const lo=[], hi=[];
+  for(const q of p){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}
+  for(let i=p.length-1;i>=0;i--){const q=p[i];while(hi.length>=2&&cross(hi[hi.length-2],hi[hi.length-1],q)<=0)hi.pop();hi.push(q);}
+  hi.pop(); lo.pop();
+  return [...lo,...hi];
+}
+
+function polygonArea(coords) {
+  let a=0; const n=coords.length;
+  for(let i=0;i<n;i++){const j=(i+1)%n;a+=coords[i][1]*coords[j][0]-coords[j][1]*coords[i][0];}
+  a=Math.abs(a)/2;
+  const clat=coords.reduce((s,c)=>s+c[0],0)/n*Math.PI/180;
+  return a*111320*111320*Math.cos(clat);
+}
+
+// Formatta area: mostra sempre m² con separatore migliaia + ha se >10000m²
+function fmtArea(m2) {
+  const m2str = Math.round(m2).toLocaleString('it-IT');
+  if (m2 >= 10000) {
+    const ha = (m2/10000).toFixed(2);
+    return `${m2str} m² <span style="color:var(--text-2);font-size:10px;">(${ha} ha)</span>`;
+  }
+  return `${m2str} m²`;
+}
+// Versione plain text per export
+function fmtAreaPlain(m2) {
+  const m2str = Math.round(m2).toLocaleString('it-IT');
+  if (m2 >= 10000) return `${m2str} m² (${(m2/10000).toFixed(2)} ha)`;
+  return `${m2str} m²`;
+}
+function fmtTime(d){return d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+function fmtDate(d){return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});}
+function fmtDur(sec){
+  const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=Math.floor(sec%60);
+  if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+s+'s'; return s+'s';
+}
+</script>
+</body>
+</html>

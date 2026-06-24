@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Report Produzione</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/shapefile@0.6.6/dist/shapefile.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--surface3:#21262d;
+  --border:#30363d;--border2:#484f58;--text:#e6edf3;--muted:#7d8590;
+  --accent:#2ea043;--accent-h:#3fb950;--blue:#58a6ff;--purple:#a371f7;
+  --orange:#d29922;--red:#f85149;--teal:#39d353;--radius:10px;
+  --font:'Inter',system-ui,-apple-system,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}
+.app{max-width:1480px;margin:0 auto;padding:24px 20px}
+
+/* HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:16px;flex-wrap:wrap}
+.header-left h1{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.header-left p{font-size:13px;color:var(--muted);margin-top:3px}
+.version-badge{background:rgba(46,160,67,.12);color:var(--accent-h);border:1px solid rgba(46,160,67,.25);border-radius:20px;padding:3px 11px;font-size:12px;font-weight:600;white-space:nowrap}
+
+/* DROP */
+#drop-section{margin-bottom:24px}
+#drop-zone{border:2px dashed var(--border2);border-radius:16px;padding:48px 24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--surface);position:relative}
+#drop-zone:hover,#drop-zone.drag-over{border-color:var(--blue);background:rgba(88,166,255,.05)}
+#drop-zone.loaded{border-color:var(--accent);border-style:solid;background:rgba(46,160,67,.05)}
+#drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:40px;margin-bottom:12px}
+.drop-title{font-size:16px;font-weight:700;margin-bottom:6px}
+.drop-sub{font-size:13px;color:var(--muted)}
+.drop-sub strong{color:var(--text)}
+
+/* PROGRESS */
+#progress-wrap{display:none;margin-top:16px}
+.progress-bar-track{background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;margin-top:8px}
+.progress-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--blue));transition:width .3s;width:0%}
+.progress-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+
+/* PILLS */
+#layer-pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.layer-pill{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
+.layer-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.layer-pill.active{border-color:var(--blue);background:rgba(88,166,255,.1);color:var(--blue)}
+.layer-pill .pill-count{background:rgba(255,255,255,.08);border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px}
+.kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.kpi-value{font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.kpi-value.green{color:var(--accent-h)}
+.kpi-value.blue{color:var(--blue)}
+.kpi-value.purple{color:var(--purple)}
+.kpi-value.orange{color:var(--orange)}
+.kpi-value.teal{color:#39d353}
+
+/* MAIN GRID */
+.main-grid{display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start;margin-bottom:20px}
+@media(max-width:960px){.main-grid{grid-template-columns:1fr}}
+
+/* FILTER PANEL */
+.filter-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:sticky;top:16px}
+.panel-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px}
+.filter-group{margin-bottom:14px}
+.filter-group:last-child{margin-bottom:0}
+.fl{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.fi{width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;outline:none;transition:border .15s;font-family:var(--font)}
+.fi:focus{border-color:var(--blue)}
+.fi::placeholder{color:var(--muted)}
+.date-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn-row{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.btn{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s;white-space:nowrap;font-family:var(--font)}
+.btn:hover{opacity:.82}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.result-info{font-size:11px;color:var(--muted);margin-top:10px}
+.filter-divider{border:none;border-top:1px solid var(--border);margin:14px 0}
+
+/* RIGHT */
+.right-col{display:flex;flex-direction:column;gap:16px}
+
+/* CHARTS */
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.charts-grid{grid-template-columns:1fr}}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.chart-card h3{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+.bar-list{display:flex;flex-direction:column;gap:8px}
+.bar-item{display:grid;grid-template-columns:100px 1fr 54px;gap:8px;align-items:center;font-size:12px}
+.bar-label{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{background:rgba(255,255,255,.06);border-radius:4px;height:7px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s}
+.bar-fill.c0{background:linear-gradient(90deg,#3fb950,#58a6ff)}
+.bar-fill.c1{background:linear-gradient(90deg,#a371f7,#58a6ff)}
+.bar-fill.c2{background:linear-gradient(90deg,#d29922,#f0883e)}
+.bar-fill.c3{background:linear-gradient(90deg,#58a6ff,#a371f7)}
+.bar-val{text-align:right;font-weight:700;color:var(--text)}
+.empty-chart{color:var(--muted);font-size:12px;padding:8px 0}
+
+/* TABLE */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.tbl-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:960px}
+thead th{background:var(--surface2);padding:10px 13px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2}
+thead th:hover{color:var(--text)}
+.si{display:inline-block;margin-left:4px;font-size:10px;opacity:.35}
+thead th.asc .si,thead th.desc .si{opacity:1;color:var(--accent-h)}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(88,166,255,.05)}
+tbody td{padding:9px 13px;font-size:13px}
+.tag-user{background:rgba(163,113,247,.15);color:var(--purple);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap;display:inline-block}
+.tag-act{background:rgba(46,160,67,.12);color:var(--accent-h);border-radius:4px;padding:2px 8px;font-size:11px;display:inline-block}
+.tag-layer{background:rgba(88,166,255,.12);color:var(--blue);border-radius:4px;padding:2px 8px;font-size:11px;display:inline-block}
+.no-res{padding:40px;text-align:center;color:var(--muted)}
+.footer-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);flex-wrap:wrap;gap:8px}
+.export-btn{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)}
+.export-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+/* MAPPA */
+#map-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px}
+.map-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px}
+.map-header h2{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.map-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.map-toggle{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.map-toggle-btn{border:none;background:transparent;color:var(--muted);padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:background .15s,color .15s;white-space:nowrap}
+.map-toggle-btn.active{background:var(--surface3);color:var(--text)}
+.map-toggle-btn:hover:not(.active){color:var(--text)}
+.btn-fit{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)}
+.btn-fit:hover{border-color:var(--blue);color:var(--blue)}
+#map-container{height:500px;width:100%;position:relative}
+#map-routing-overlay{display:none;position:absolute;inset:0;background:rgba(13,17,23,.75);z-index:1000;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+#map-routing-overlay.show{display:flex}
+.routing-spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.routing-label{font-size:13px;color:var(--text);font-weight:600}
+.routing-sub{font-size:11px;color:var(--muted)}
+.map-legend{padding:10px 16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--muted);align-items:center;min-height:38px}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.legend-line{width:18px;height:3px;border-radius:2px;flex-shrink:0}
+.legend-dashed{width:18px;height:0;border-top:2px dashed currentColor;flex-shrink:0;opacity:.6}
+
+/* routing status badge */
+.route-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;margin-left:6px}
+.route-badge.routed{background:rgba(88,166,255,.15);color:var(--blue)}
+.route-badge.fallback{background:rgba(210,153,34,.15);color:var(--orange)}
+
+/* POPUP */
+.leaflet-popup-content-wrapper{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:10px!important;box-shadow:0 8px 24px rgba(0,0,0,.5)!important;color:var(--text)!important;padding:0!important}
+.leaflet-popup-content{margin:0!important;padding:14px 16px!important;font-family:var(--font)!important;font-size:13px!important;min-width:210px}
+.leaflet-popup-tip{background:var(--border)!important}
+.leaflet-popup-close-button{color:var(--muted)!important;font-size:18px!important;top:8px!important;right:10px!important}
+.popup-title{font-weight:700;font-size:13px;margin-bottom:8px}
+.popup-row{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12px}
+.popup-row .pk{color:var(--muted)}
+.popup-row .pv{font-weight:600}
+.popup-row .pv.green{color:var(--accent-h)}
+.popup-row .pv.blue{color:var(--blue)}
+.popup-row .pv.purple{color:var(--purple)}
+.popup-row .pv.orange{color:var(--orange)}
+.popup-divider{border:none;border-top:1px solid var(--border);margin:8px 0}
+
+/* ALERTS & EMPTY */
+#empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
+#empty-state .es-icon{font-size:48px;margin-bottom:16px;opacity:.4}
+#empty-state h2{font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px}
+#empty-state p{font-size:13px;max-width:400px;margin:0 auto}
+.alert{border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start}
+.alert-warn{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.25);color:var(--orange)}
+.alert-err{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);color:var(--red)}
+.alert-ok{background:rgba(46,160,67,.1);border:1px solid rgba(46,160,67,.25);color:var(--accent-h)}
+.hidden{display:none!important}
+
+/* EXPORT BAR */
+#export-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+#export-bar.hidden-bar{display:none}
+.export-bar-left{display:flex;flex-direction:column;gap:2px}
+.export-bar-title{font-size:13px;font-weight:700;color:var(--text)}
+.export-bar-sub{font-size:11px;color:var(--muted)}
+.export-bar-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn-export-html{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:6px;transition:opacity .15s}
+.btn-export-html:hover{opacity:.85}
+.btn-export-csv-top{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:6px;transition:border-color .15s,color .15s}
+.btn-export-csv-top:hover{border-color:var(--accent-h);color:var(--accent-h)}
+.export-bar-note{font-size:11px;color:var(--muted);padding:4px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-left">
+      <h1>Report Produzione</h1>
+      <p>Carica uno ZIP con shapefile per analizzare la produzione degli operatori</p>
+    </div>
+    <span class="version-badge">v3.12.0 — web</span>
+  </div>
+
+  <!-- EXPORT BAR — visibile solo dopo caricamento dati -->
+  <div id="export-bar" class="hidden-bar">
+    <div class="export-bar-left">
+      <div class="export-bar-title">⬇ Esporta report</div>
+      <div class="export-bar-sub">Salva una copia completa del report con tutti i dati embedded — pronta da condividere</div>
+    </div>
+    <div class="export-bar-actions">
+      <button class="btn-export-html" id="btn-save-html">
+        <span>🌐</span> Salva HTML
+      </button>
+      <button class="btn-export-csv-top" id="btn-save-csv">
+        <span>📄</span> Salva CSV
+      </button>
+      <span class="export-bar-note" id="export-bar-note">Chrome/Edge: scegli percorso · Altri browser: download automatico</span>
+    </div>
+  </div>
+
+  <div id="drop-section">
+    <div id="drop-zone">
+      <input type="file" id="file-input" accept=".zip">
+      <div class="drop-icon">📦</div>
+      <div class="drop-title" id="drop-title">Trascina lo ZIP qui, o clicca per selezionarlo</div>
+      <div class="drop-sub" id="drop-sub">Lo ZIP deve contenere uno o più shapefile con i campi <strong>foto</strong> e <strong>lastuser</strong></div>
+    </div>
+    <div id="progress-wrap">
+      <div class="progress-label" id="progress-label">Caricamento...</div>
+      <div class="progress-bar-track"><div class="progress-bar-fill" id="progress-bar"></div></div>
+    </div>
+    <div id="alerts"></div>
+  </div>
+
+  <div id="report-section" class="hidden">
+
+    <div id="layer-pills"></div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-label">Record</div><div class="kpi-value green" id="kpi-rows">0</div></div>
+      <div class="kpi"><div class="kpi-label">Produzione totale</div><div class="kpi-value blue" id="kpi-prod">0</div></div>
+      <div class="kpi"><div class="kpi-label">Ore totali</div><div class="kpi-value purple" id="kpi-ore">0</div></div>
+      <div class="kpi"><div class="kpi-label">Lunghezza totale</div><div class="kpi-value teal" id="kpi-lun">0 m</div></div>
+      <div class="kpi"><div class="kpi-label">Operatori</div><div class="kpi-value orange" id="kpi-utenti">0</div></div>
+    </div>
+
+    <div class="main-grid">
+      <div class="filter-panel">
+        <div class="panel-title">Filtri</div>
+        <div class="filter-group">
+          <label class="fl">Ricerca globale</label>
+          <input class="fi" id="f-search" type="text" placeholder="Cerca…">
+        </div>
+        <div class="filter-group">
+          <label class="fl">Operatore</label>
+          <select class="fi" id="f-user"><option value="">— Tutti —</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="fl">Layer</label>
+          <select class="fi" id="f-layer"><option value="">— Tutti —</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="fl">Mese</label>
+          <select class="fi" id="f-mese"><option value="">— Tutti —</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="fl">Anno</label>
+          <select class="fi" id="f-anno"><option value="">— Tutti —</option></select>
+        </div>
+        <div class="filter-group">
+          <label class="fl">Attività</label>
+          <select class="fi" id="f-att"><option value="">— Tutte —</option></select>
+        </div>
+        <hr class="filter-divider">
+        <div class="filter-group">
+          <label class="fl">Intervallo date</label>
+          <div class="date-row">
+            <input class="fi" id="f-date-from" type="date">
+            <input class="fi" id="f-date-to" type="date">
+          </div>
+        </div>
+        <div class="filter-group">
+          <label class="fl">Fascia oraria</label>
+          <div class="date-row">
+            <input class="fi" id="f-ora-from" type="time">
+            <input class="fi" id="f-ora-to" type="time">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-applica">Applica</button>
+          <button class="btn btn-secondary" id="btn-reset">Reset</button>
+        </div>
+        <div class="result-info" id="result-info"></div>
+      </div>
+
+      <div class="right-col">
+        <div class="charts-grid">
+          <div class="chart-card"><h3>Produzione per operatore</h3><div class="bar-list" id="chart-user"></div></div>
+          <div class="chart-card"><h3>Ore per mese</h3><div class="bar-list" id="chart-mese"></div></div>
+          <div class="chart-card"><h3>Produzione per layer</h3><div class="bar-list" id="chart-layer"></div></div>
+          <div class="chart-card"><h3>Produzione per attività</h3><div class="bar-list" id="chart-att"></div></div>
+        </div>
+
+        <div class="tbl-wrap">
+          <div class="tbl-scroll">
+            <table>
+              <thead><tr>
+                <th data-col="layer">Layer <span class="si">⇅</span></th>
+                <th data-col="anno">Anno <span class="si">⇅</span></th>
+                <th data-col="meseN">Mese <span class="si">⇅</span></th>
+                <th data-col="giorno">Giorno <span class="si">⇅</span></th>
+                <th data-col="utente">Operatore <span class="si">⇅</span></th>
+                <th data-col="inizio">Inizio <span class="si">⇅</span></th>
+                <th data-col="fine">Fine <span class="si">⇅</span></th>
+                <th data-col="prod">Produzione <span class="si">⇅</span></th>
+                <th data-col="ore">Ore <span class="si">⇅</span></th>
+                <th data-col="lunghezza">Lunghezza (m) <span class="si">⇅</span></th>
+                <th data-col="attivita">Attività <span class="si">⇅</span></th>
+              </tr></thead>
+              <tbody id="tbl-body"></tbody>
+            </table>
+          </div>
+          <div class="footer-bar">
+            <span id="footer-count"></span>
+            <button class="export-btn" id="btn-export-csv">⬇ Esporta CSV filtrato</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPPA -->
+    <div id="map-section">
+      <div class="map-header">
+        <h2>🗺 Mappa percorsi</h2>
+        <div class="map-controls">
+          <div class="map-toggle">
+            <button class="map-toggle-btn active" id="btn-view-day" onclick="setMapView('day')">Per operatore / giorno</button>
+            <button class="map-toggle-btn" id="btn-view-layer" onclick="setMapView('layer')">Per layer</button>
+          </div>
+          <button class="btn-fit" onclick="fitMap()">⊞ Adatta vista</button>
+        </div>
+      </div>
+      <div id="map-container">
+        <div id="map-routing-overlay">
+          <div class="routing-spinner"></div>
+          <div class="routing-label" id="routing-label">Calcolo percorsi su strada…</div>
+          <div class="routing-sub" id="routing-sub"></div>
+        </div>
+      </div>
+      <div id="map-legend" class="map-legend"></div>
+    </div>
+
+  </div>
+
+  <div id="empty-state">
+    <div class="es-icon">🗂</div>
+    <h2>Nessun dato caricato</h2>
+    <p>Carica uno ZIP contenente shapefile con i campi <strong>foto</strong> e <strong>lastuser</strong> per generare il report.</p>
+  </div>
+
+</div>
+<script>
+// ═══════════════════════════════════════════════════════
+// PRELOAD — se il file è stato esportato con dati embedded,
+// questo script (iniettato prima di quello principale) avrà
+// già dichiarato __EMBEDDED_ROWS__ e __EMBEDDED_TRACKS__.
+// Altrimenti sono undefined e il report parte in modalità ZIP.
+// ═══════════════════════════════════════════════════════
+</script>
+<script>
+// ═══════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════
+const ORS_KEY    = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjZlNWMxOWZlNTk5ZTQ5ZWNiMjBkOWJhOWU0YjM0Nzg5IiwiaCI6Im11cm11cjY0In0=';
+const ORS_URL    = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';
+// Max waypoints per singola chiamata ORS (limite API: 50)
+const ORS_CHUNK  = 50;
+// Cache routing: chiave = "lng1,lat1|lng2,lat2|..." → { coords, distance }
+const routeCache = new Map();
+
+// ═══════════════════════════════════════════════════════
+// COSTANTI
+// ═══════════════════════════════════════════════════════
+const MONTH_NAMES={'01':'Gennaio','02':'Febbraio','03':'Marzo','04':'Aprile','05':'Maggio','06':'Giugno','07':'Luglio','08':'Agosto','09':'Settembre','10':'Ottobre','11':'Novembre','12':'Dicembre'};
+const LAYER_COLORS=['#58a6ff','#3fb950','#a371f7','#d29922','#f0883e','#f85149','#79c0ff','#56d364'];
+const DAY_PALETTE=['#e06c75','#98c379','#e5c07b','#61afef','#c678dd','#56b6c2','#f0883e','#a371f7','#3fb950','#58a6ff','#d29922','#ff7b72','#7ee787','#ffa657','#d2a8ff','#79c0ff','#56d364','#f78166','#ffd700','#00bcd4'];
+
+// ═══════════════════════════════════════════════════════
+// STATO
+// ═══════════════════════════════════════════════════════
+let ALL_ROWS=[], ALL_TRACKS=[], filtered=[], filteredTracks=[];
+let sortCol=null, sortAsc=true, mapView='day';
+let leafletMap=null, mapLayers=[];
+
+
+// ── Sorgente del template di export (stringa grezza) ──
+const __SOURCE__ = "<!DOCTYPE html>\n<html lang=\"it\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Report Produzione</title>\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js\"><\/script>\n<script src=\"https://unpkg.com/shapefile@0.6.6/dist/shapefile.js\"><\/script>\n<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"/>\n<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"><\/script>\n<style>\n*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}\n:root{\n  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--surface3:#21262d;\n  --border:#30363d;--border2:#484f58;--text:#e6edf3;--muted:#7d8590;\n  --accent:#2ea043;--accent-h:#3fb950;--blue:#58a6ff;--purple:#a371f7;\n  --orange:#d29922;--red:#f85149;--teal:#39d353;--radius:10px;\n  --font:'Inter',system-ui,-apple-system,sans-serif;\n}\nbody{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}\n.app{max-width:1480px;margin:0 auto;padding:24px 20px}\n\n/* HEADER */\n.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:16px;flex-wrap:wrap}\n.header-left h1{font-size:20px;font-weight:700;letter-spacing:-.3px}\n.header-left p{font-size:13px;color:var(--muted);margin-top:3px}\n.version-badge{background:rgba(46,160,67,.12);color:var(--accent-h);border:1px solid rgba(46,160,67,.25);border-radius:20px;padding:3px 11px;font-size:12px;font-weight:600;white-space:nowrap}\n\n/* DROP */\n#drop-section{margin-bottom:24px}\n#drop-zone{border:2px dashed var(--border2);border-radius:16px;padding:48px 24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--surface);position:relative}\n#drop-zone:hover,#drop-zone.drag-over{border-color:var(--blue);background:rgba(88,166,255,.05)}\n#drop-zone.loaded{border-color:var(--accent);border-style:solid;background:rgba(46,160,67,.05)}\n#drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}\n.drop-icon{font-size:40px;margin-bottom:12px}\n.drop-title{font-size:16px;font-weight:700;margin-bottom:6px}\n.drop-sub{font-size:13px;color:var(--muted)}\n.drop-sub strong{color:var(--text)}\n\n/* PROGRESS */\n#progress-wrap{display:none;margin-top:16px}\n.progress-bar-track{background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;margin-top:8px}\n.progress-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--blue));transition:width .3s;width:0%}\n.progress-label{font-size:12px;color:var(--muted);margin-bottom:4px}\n\n/* PILLS */\n#layer-pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}\n.layer-pill{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s;user-select:none}\n.layer-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}\n.layer-pill.active{border-color:var(--blue);background:rgba(88,166,255,.1);color:var(--blue)}\n.layer-pill .pill-count{background:rgba(255,255,255,.08);border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px}\n\n/* KPI */\n.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:20px}\n.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px}\n.kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}\n.kpi-value{font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1}\n.kpi-value.green{color:var(--accent-h)}\n.kpi-value.blue{color:var(--blue)}\n.kpi-value.purple{color:var(--purple)}\n.kpi-value.orange{color:var(--orange)}\n.kpi-value.teal{color:#39d353}\n\n/* MAIN GRID */\n.main-grid{display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start;margin-bottom:20px}\n@media(max-width:960px){.main-grid{grid-template-columns:1fr}}\n\n/* FILTER PANEL */\n.filter-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:sticky;top:16px}\n.panel-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px}\n.filter-group{margin-bottom:14px}\n.filter-group:last-child{margin-bottom:0}\n.fl{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}\n.fi{width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;outline:none;transition:border .15s;font-family:var(--font)}\n.fi:focus{border-color:var(--blue)}\n.fi::placeholder{color:var(--muted)}\n.date-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.btn-row{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}\n.btn{border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s;white-space:nowrap;font-family:var(--font)}\n.btn:hover{opacity:.82}\n.btn-primary{background:var(--accent);color:#fff}\n.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}\n.result-info{font-size:11px;color:var(--muted);margin-top:10px}\n.filter-divider{border:none;border-top:1px solid var(--border);margin:14px 0}\n\n/* RIGHT */\n.right-col{display:flex;flex-direction:column;gap:16px}\n\n/* CHARTS */\n.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}\n@media(max-width:700px){.charts-grid{grid-template-columns:1fr}}\n.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}\n.chart-card h3{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}\n.bar-list{display:flex;flex-direction:column;gap:8px}\n.bar-item{display:grid;grid-template-columns:100px 1fr 54px;gap:8px;align-items:center;font-size:12px}\n.bar-label{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.bar-track{background:rgba(255,255,255,.06);border-radius:4px;height:7px;overflow:hidden}\n.bar-fill{height:100%;border-radius:4px;transition:width .4s}\n.bar-fill.c0{background:linear-gradient(90deg,#3fb950,#58a6ff)}\n.bar-fill.c1{background:linear-gradient(90deg,#a371f7,#58a6ff)}\n.bar-fill.c2{background:linear-gradient(90deg,#d29922,#f0883e)}\n.bar-fill.c3{background:linear-gradient(90deg,#58a6ff,#a371f7)}\n.bar-val{text-align:right;font-weight:700;color:var(--text)}\n.empty-chart{color:var(--muted);font-size:12px;padding:8px 0}\n\n/* TABLE */\n.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}\n.tbl-scroll{overflow-x:auto}\ntable{width:100%;border-collapse:collapse;min-width:960px}\nthead th{background:var(--surface2);padding:10px 13px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2}\nthead th:hover{color:var(--text)}\n.si{display:inline-block;margin-left:4px;font-size:10px;opacity:.35}\nthead th.asc .si,thead th.desc .si{opacity:1;color:var(--accent-h)}\ntbody tr{border-bottom:1px solid var(--border);transition:background .1s}\ntbody tr:last-child{border-bottom:none}\ntbody tr:hover{background:rgba(88,166,255,.05)}\ntbody td{padding:9px 13px;font-size:13px}\n.tag-user{background:rgba(163,113,247,.15);color:var(--purple);border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap;display:inline-block}\n.tag-act{background:rgba(46,160,67,.12);color:var(--accent-h);border-radius:4px;padding:2px 8px;font-size:11px;display:inline-block}\n.tag-layer{background:rgba(88,166,255,.12);color:var(--blue);border-radius:4px;padding:2px 8px;font-size:11px;display:inline-block}\n.no-res{padding:40px;text-align:center;color:var(--muted)}\n.footer-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);flex-wrap:wrap;gap:8px}\n.export-btn{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)}\n.export-btn:hover{border-color:var(--blue);color:var(--blue)}\n\n/* MAPPA */\n#map-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px}\n.map-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px}\n.map-header h2{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}\n.map-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}\n.map-toggle{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden}\n.map-toggle-btn{border:none;background:transparent;color:var(--muted);padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);transition:background .15s,color .15s;white-space:nowrap}\n.map-toggle-btn.active{background:var(--surface3);color:var(--text)}\n.map-toggle-btn:hover:not(.active){color:var(--text)}\n.btn-fit{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)}\n.btn-fit:hover{border-color:var(--blue);color:var(--blue)}\n#map-container{height:500px;width:100%;position:relative}\n#map-routing-overlay{display:none;position:absolute;inset:0;background:rgba(13,17,23,.75);z-index:1000;align-items:center;justify-content:center;flex-direction:column;gap:12px}\n#map-routing-overlay.show{display:flex}\n.routing-spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}\n@keyframes spin{to{transform:rotate(360deg)}}\n.routing-label{font-size:13px;color:var(--text);font-weight:600}\n.routing-sub{font-size:11px;color:var(--muted)}\n.map-legend{padding:10px 16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--muted);align-items:center;min-height:38px}\n.legend-item{display:flex;align-items:center;gap:5px}\n.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}\n.legend-line{width:18px;height:3px;border-radius:2px;flex-shrink:0}\n.legend-dashed{width:18px;height:0;border-top:2px dashed currentColor;flex-shrink:0;opacity:.6}\n\n/* routing status badge */\n.route-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;margin-left:6px}\n.route-badge.routed{background:rgba(88,166,255,.15);color:var(--blue)}\n.route-badge.fallback{background:rgba(210,153,34,.15);color:var(--orange)}\n\n/* POPUP */\n.leaflet-popup-content-wrapper{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:10px!important;box-shadow:0 8px 24px rgba(0,0,0,.5)!important;color:var(--text)!important;padding:0!important}\n.leaflet-popup-content{margin:0!important;padding:14px 16px!important;font-family:var(--font)!important;font-size:13px!important;min-width:210px}\n.leaflet-popup-tip{background:var(--border)!important}\n.leaflet-popup-close-button{color:var(--muted)!important;font-size:18px!important;top:8px!important;right:10px!important}\n.popup-title{font-weight:700;font-size:13px;margin-bottom:8px}\n.popup-row{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12px}\n.popup-row .pk{color:var(--muted)}\n.popup-row .pv{font-weight:600}\n.popup-row .pv.green{color:var(--accent-h)}\n.popup-row .pv.blue{color:var(--blue)}\n.popup-row .pv.purple{color:var(--purple)}\n.popup-row .pv.orange{color:var(--orange)}\n.popup-divider{border:none;border-top:1px solid var(--border);margin:8px 0}\n\n/* ALERTS & EMPTY */\n#empty-state{text-align:center;padding:60px 20px;color:var(--muted)}\n#empty-state .es-icon{font-size:48px;margin-bottom:16px;opacity:.4}\n#empty-state h2{font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px}\n#empty-state p{font-size:13px;max-width:400px;margin:0 auto}\n.alert{border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start}\n.alert-warn{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.25);color:var(--orange)}\n.alert-err{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);color:var(--red)}\n.alert-ok{background:rgba(46,160,67,.1);border:1px solid rgba(46,160,67,.25);color:var(--accent-h)}\n.hidden{display:none!important}\n\n/* EXPORT BAR */\n#export-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}\n#export-bar.hidden-bar{display:none}\n.export-bar-left{display:flex;flex-direction:column;gap:2px}\n.export-bar-title{font-size:13px;font-weight:700;color:var(--text)}\n.export-bar-sub{font-size:11px;color:var(--muted)}\n.export-bar-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}\n.btn-export-html{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:6px;transition:opacity .15s}\n.btn-export-html:hover{opacity:.85}\n.btn-export-csv-top{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:6px;transition:border-color .15s,color .15s}\n.btn-export-csv-top:hover{border-color:var(--accent-h);color:var(--accent-h)}\n.export-bar-note{font-size:11px;color:var(--muted);padding:4px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)}\n<\/style>\n<\/head>\n<body>\n<div class=\"app\">\n\n  <div class=\"header\">\n    <div class=\"header-left\">\n      <h1>Report Produzione</h1>\n      <p>Carica uno ZIP con shapefile per analizzare la produzione degli operatori</p>\n    </div>\n    <span class=\"version-badge\">v3.12.0 — web</span>\n  </div>\n\n  <!-- EXPORT BAR — visibile solo dopo caricamento dati -->\n  <div id=\"export-bar\" class=\"hidden-bar\">\n    <div class=\"export-bar-left\">\n      <div class=\"export-bar-title\">⬇ Esporta report</div>\n      <div class=\"export-bar-sub\">Salva una copia completa del report con tutti i dati embedded — pronta da condividere</div>\n    </div>\n    <div class=\"export-bar-actions\">\n      <button class=\"btn-export-html\" id=\"btn-save-html\">\n        <span>🌐</span> Salva HTML\n      </button>\n      <button class=\"btn-export-csv-top\" id=\"btn-save-csv\">\n        <span>📄</span> Salva CSV\n      </button>\n      <span class=\"export-bar-note\" id=\"export-bar-note\">Chrome/Edge: scegli percorso · Altri browser: download automatico</span>\n    </div>\n  </div>\n\n  <div id=\"drop-section\">\n    <div id=\"drop-zone\">\n      <input type=\"file\" id=\"file-input\" accept=\".zip\">\n      <div class=\"drop-icon\">📦</div>\n      <div class=\"drop-title\" id=\"drop-title\">Trascina lo ZIP qui, o clicca per selezionarlo</div>\n      <div class=\"drop-sub\" id=\"drop-sub\">Lo ZIP deve contenere uno o più shapefile con i campi <strong>foto</strong> e <strong>lastuser</strong></div>\n    </div>\n    <div id=\"progress-wrap\">\n      <div class=\"progress-label\" id=\"progress-label\">Caricamento...</div>\n      <div class=\"progress-bar-track\"><div class=\"progress-bar-fill\" id=\"progress-bar\"></div></div>\n    </div>\n    <div id=\"alerts\"></div>\n  </div>\n\n  <div id=\"report-section\" class=\"hidden\">\n\n    <div id=\"layer-pills\"></div>\n\n    <div class=\"kpis\">\n      <div class=\"kpi\"><div class=\"kpi-label\">Record</div><div class=\"kpi-value green\" id=\"kpi-rows\">0</div></div>\n      <div class=\"kpi\"><div class=\"kpi-label\">Produzione totale</div><div class=\"kpi-value blue\" id=\"kpi-prod\">0</div></div>\n      <div class=\"kpi\"><div class=\"kpi-label\">Ore totali</div><div class=\"kpi-value purple\" id=\"kpi-ore\">0</div></div>\n      <div class=\"kpi\"><div class=\"kpi-label\">Lunghezza totale</div><div class=\"kpi-value teal\" id=\"kpi-lun\">0 m</div></div>\n      <div class=\"kpi\"><div class=\"kpi-label\">Operatori</div><div class=\"kpi-value orange\" id=\"kpi-utenti\">0</div></div>\n    </div>\n\n    <div class=\"main-grid\">\n      <div class=\"filter-panel\">\n        <div class=\"panel-title\">Filtri</div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Ricerca globale</label>\n          <input class=\"fi\" id=\"f-search\" type=\"text\" placeholder=\"Cerca…\">\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Operatore</label>\n          <select class=\"fi\" id=\"f-user\"><option value=\"\">— Tutti —</option></select>\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Layer</label>\n          <select class=\"fi\" id=\"f-layer\"><option value=\"\">— Tutti —</option></select>\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Mese</label>\n          <select class=\"fi\" id=\"f-mese\"><option value=\"\">— Tutti —</option></select>\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Anno</label>\n          <select class=\"fi\" id=\"f-anno\"><option value=\"\">— Tutti —</option></select>\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Attività</label>\n          <select class=\"fi\" id=\"f-att\"><option value=\"\">— Tutte —</option></select>\n        </div>\n        <hr class=\"filter-divider\">\n        <div class=\"filter-group\">\n          <label class=\"fl\">Intervallo date</label>\n          <div class=\"date-row\">\n            <input class=\"fi\" id=\"f-date-from\" type=\"date\">\n            <input class=\"fi\" id=\"f-date-to\" type=\"date\">\n          </div>\n        </div>\n        <div class=\"filter-group\">\n          <label class=\"fl\">Fascia oraria</label>\n          <div class=\"date-row\">\n            <input class=\"fi\" id=\"f-ora-from\" type=\"time\">\n            <input class=\"fi\" id=\"f-ora-to\" type=\"time\">\n          </div>\n        </div>\n        <div class=\"btn-row\">\n          <button class=\"btn btn-primary\" id=\"btn-applica\">Applica</button>\n          <button class=\"btn btn-secondary\" id=\"btn-reset\">Reset</button>\n        </div>\n        <div class=\"result-info\" id=\"result-info\"></div>\n      </div>\n\n      <div class=\"right-col\">\n        <div class=\"charts-grid\">\n          <div class=\"chart-card\"><h3>Produzione per operatore</h3><div class=\"bar-list\" id=\"chart-user\"></div></div>\n          <div class=\"chart-card\"><h3>Ore per mese</h3><div class=\"bar-list\" id=\"chart-mese\"></div></div>\n          <div class=\"chart-card\"><h3>Produzione per layer</h3><div class=\"bar-list\" id=\"chart-layer\"></div></div>\n          <div class=\"chart-card\"><h3>Produzione per attività</h3><div class=\"bar-list\" id=\"chart-att\"></div></div>\n        </div>\n\n        <div class=\"tbl-wrap\">\n          <div class=\"tbl-scroll\">\n            <table>\n              <thead><tr>\n                <th data-col=\"layer\">Layer <span class=\"si\">⇅</span></th>\n                <th data-col=\"anno\">Anno <span class=\"si\">⇅</span></th>\n                <th data-col=\"meseN\">Mese <span class=\"si\">⇅</span></th>\n                <th data-col=\"giorno\">Giorno <span class=\"si\">⇅</span></th>\n                <th data-col=\"utente\">Operatore <span class=\"si\">⇅</span></th>\n                <th data-col=\"inizio\">Inizio <span class=\"si\">⇅</span></th>\n                <th data-col=\"fine\">Fine <span class=\"si\">⇅</span></th>\n                <th data-col=\"prod\">Produzione <span class=\"si\">⇅</span></th>\n                <th data-col=\"ore\">Ore <span class=\"si\">⇅</span></th>\n                <th data-col=\"lunghezza\">Lunghezza (m) <span class=\"si\">⇅</span></th>\n                <th data-col=\"attivita\">Attività <span class=\"si\">⇅</span></th>\n              </tr></thead>\n              <tbody id=\"tbl-body\"></tbody>\n            </table>\n          </div>\n          <div class=\"footer-bar\">\n            <span id=\"footer-count\"></span>\n            <button class=\"export-btn\" id=\"btn-export-csv\">⬇ Esporta CSV filtrato</button>\n          </div>\n        </div>\n      </div>\n    </div>\n\n    <!-- MAPPA -->\n    <div id=\"map-section\">\n      <div class=\"map-header\">\n        <h2>🗺 Mappa percorsi</h2>\n        <div class=\"map-controls\">\n          <div class=\"map-toggle\">\n            <button class=\"map-toggle-btn active\" id=\"btn-view-day\" onclick=\"setMapView('day')\">Per operatore / giorno</button>\n            <button class=\"map-toggle-btn\" id=\"btn-view-layer\" onclick=\"setMapView('layer')\">Per layer</button>\n          </div>\n          <button class=\"btn-fit\" onclick=\"fitMap()\">⊞ Adatta vista</button>\n        </div>\n      </div>\n      <div id=\"map-container\">\n        <div id=\"map-routing-overlay\">\n          <div class=\"routing-spinner\"></div>\n          <div class=\"routing-label\" id=\"routing-label\">Calcolo percorsi su strada…</div>\n          <div class=\"routing-sub\" id=\"routing-sub\"></div>\n        </div>\n      </div>\n      <div id=\"map-legend\" class=\"map-legend\"></div>\n    </div>\n\n  </div>\n\n  <div id=\"empty-state\">\n    <div class=\"es-icon\">🗂</div>\n    <h2>Nessun dato caricato</h2>\n    <p>Carica uno ZIP contenente shapefile con i campi <strong>foto</strong> e <strong>lastuser</strong> per generare il report.</p>\n  </div>\n\n</div>\n<script>\n// ═══════════════════════════════════════════════════════\n// PRELOAD — se il file è stato esportato con dati embedded,\n// questo script (iniettato prima di quello principale) avrà\n// già dichiarato __EMBEDDED_ROWS__ e __EMBEDDED_TRACKS__.\n// Altrimenti sono undefined e il report parte in modalità ZIP.\n// ═══════════════════════════════════════════════════════\n<\/script>\n<script>\n// ═══════════════════════════════════════════════════════\n// CONFIG\n// ═══════════════════════════════════════════════════════\nconst ORS_KEY    = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjZlNWMxOWZlNTk5ZTQ5ZWNiMjBkOWJhOWU0YjM0Nzg5IiwiaCI6Im11cm11cjY0In0=';\nconst ORS_URL    = 'https://api.openrouteservice.org/v2/directions/foot-walking/geojson';\n// Max waypoints per singola chiamata ORS (limite API: 50)\nconst ORS_CHUNK  = 50;\n// Cache routing: chiave = \"lng1,lat1|lng2,lat2|...\" → { coords, distance }\nconst routeCache = new Map();\n\n// ═══════════════════════════════════════════════════════\n// COSTANTI\n// ═══════════════════════════════════════════════════════\nconst MONTH_NAMES={'01':'Gennaio','02':'Febbraio','03':'Marzo','04':'Aprile','05':'Maggio','06':'Giugno','07':'Luglio','08':'Agosto','09':'Settembre','10':'Ottobre','11':'Novembre','12':'Dicembre'};\nconst LAYER_COLORS=['#58a6ff','#3fb950','#a371f7','#d29922','#f0883e','#f85149','#79c0ff','#56d364'];\nconst DAY_PALETTE=['#e06c75','#98c379','#e5c07b','#61afef','#c678dd','#56b6c2','#f0883e','#a371f7','#3fb950','#58a6ff','#d29922','#ff7b72','#7ee787','#ffa657','#d2a8ff','#79c0ff','#56d364','#f78166','#ffd700','#00bcd4'];\n\n// ═══════════════════════════════════════════════════════\n// STATO\n// ═══════════════════════════════════════════════════════\nlet ALL_ROWS=[], ALL_TRACKS=[], filtered=[], filteredTracks=[];\nlet sortCol=null, sortAsc=true, mapView='day';\nlet leafletMap=null, mapLayers=[];\n\n// ── Boot automatico se il file è stato esportato con dati embedded ──\ndocument.addEventListener('DOMContentLoaded',()=>{\n  if(typeof __EMBEDDED_ROWS__ !== 'undefined' && __EMBEDDED_ROWS__ && __EMBEDDED_ROWS__.length){\n    ALL_ROWS   = __EMBEDDED_ROWS__;\n    ALL_TRACKS = __EMBEDDED_TRACKS__;\n    // Ripristina cache routing dai percorsi già calcolati\n    ALL_TRACKS.forEach(t=>{\n      if(t.routedCoords && t.points && t.points.length>=2){\n        const ck=t.points.map(p=>p.lng.toFixed(6)+','+p.lat.toFixed(6)).join('|');\n        routeCache.set(ck,{coords:t.routedCoords,distance:t.lunghezza,isReal:t.routeIsReal});\n      }\n    });\n    document.getElementById('drop-title').textContent='📂 Dati precaricati';\n    document.getElementById('drop-sub').textContent=ALL_ROWS.length+' record · trascina un nuovo ZIP per aggiornare';\n    buildUI();\n  }\n});\n\n// ═══════════════════════════════════════════════════════\n// DOM\n// ═══════════════════════════════════════════════════════\nconst dropZone     =document.getElementById('drop-zone');\nconst fileInput    =document.getElementById('file-input');\nconst progressWrap =document.getElementById('progress-wrap');\nconst progressBar  =document.getElementById('progress-bar');\nconst progressLabel=document.getElementById('progress-label');\nconst alertsEl     =document.getElementById('alerts');\nconst reportSection=document.getElementById('report-section');\nconst emptyState   =document.getElementById('empty-state');\nconst tblBody      =document.getElementById('tbl-body');\nconst layerPillsEl =document.getElementById('layer-pills');\nconst routingOverlay=document.getElementById('map-routing-overlay');\nconst routingLabel =document.getElementById('routing-label');\nconst routingSub   =document.getElementById('routing-sub');\n\n// ═══════════════════════════════════════════════════════\n// DRAG & DROP\n// ═══════════════════════════════════════════════════════\ndropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});\ndropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));\ndropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files[0])processZip(e.dataTransfer.files[0]);});\nfileInput.addEventListener('change',()=>{if(fileInput.files[0])processZip(fileInput.files[0]);});\n\n// ═══════════════════════════════════════════════════════\n// ZIP\n// ═══════════════════════════════════════════════════════\nasync function processZip(file){\n  clearAlerts();setProgress(0,'Apertura ZIP…');showProgress(true);\n  try{\n    const zip=await JSZip.loadAsync(file);\n    const allFiles=Object.keys(zip.files);\n    const shpFiles=allFiles.filter(n=>n.toLowerCase().endsWith('.shp')&&!zip.files[n].dir);\n    if(!shpFiles.length){addAlert('error','Nessun file .shp trovato nello ZIP.');showProgress(false);return;}\n    setProgress(10,`Trovati ${shpFiles.length} shapefile…`);\n    const allRows=[],allTracks=[],errors=[];let processed=0;\n    for(const shpPath of shpFiles){\n      const layerName=shpPath.replace(/\\.shp$/i,'').replace(/.*\\//,'');\n      const basePath=shpPath.replace(/\\.shp$/i,'');\n      try{\n        const shpBuf=await zip.files[shpPath].async('arraybuffer');\n        const dbfKey=allFiles.find(n=>n.toLowerCase()===basePath.toLowerCase()+'.dbf');\n        if(!dbfKey){errors.push(`${layerName}: .dbf mancante`);continue;}\n        const dbfBuf=await zip.files[dbfKey].async('arraybuffer');\n        const {rows,tracks}=await parseShapefile(shpBuf,dbfBuf,layerName);\n        allRows.push(...rows);allTracks.push(...tracks);processed++;\n      }catch(err){errors.push(`${layerName}: ${err.message||err}`);}\n      setProgress(10+Math.round(80*(processed/shpFiles.length)),`Elaborato: ${layerName}`);\n    }\n    if(errors.length) addAlert('warn','Alcuni layer saltati:<br>'+errors.map(e=>`• ${e}`).join('<br>'));\n    if(!allRows.length){addAlert('error','Nessun record valido trovato.');showProgress(false);return;}\n    allRows.sort((a,b)=>(a.data+a.layer+a.utente).localeCompare(b.data+b.layer+b.utente));\n    ALL_ROWS=allRows;ALL_TRACKS=allTracks;\n    setProgress(100,`${allRows.length} record da ${processed} layer`);\n    addAlert('ok',`✓ Caricati <strong>${allRows.length}</strong> record da <strong>${processed}</strong> shapefile.`);\n    setTimeout(()=>showProgress(false),800);\n    dropZone.classList.add('loaded');\n    document.getElementById('drop-title').textContent=`📂 ${file.name}`;\n    document.getElementById('drop-sub').textContent=`${allRows.length} record — ${processed} layer — clicca per cambiare file`;\n    buildUI();\n  }catch(err){addAlert('error','Errore ZIP: '+err.message);showProgress(false);}\n}\n\n// ═══════════════════════════════════════════════════════\n// SHAPEFILE PARSING\n// produzione = numero di PUNTI (feature), non numero di foto\n// ═══════════════════════════════════════════════════════\nasync function parseShapefile(shpBuf,dbfBuf,layerName){\n  const source=await shapefile.open(shpBuf,dbfBuf);\n  const features=[];\n  while(true){const r=await source.read();if(r.done)break;features.push(r.value);}\n  if(!features.length) return {rows:[],tracks:[]};\n\n  const sampleProps=features[0].properties||{};\n  const fieldMap={};\n  for(const k of Object.keys(sampleProps)) fieldMap[k.toLowerCase().trim()]=k;\n  if(!fieldMap['foto']||!fieldMap['lastuser'])\n    throw new Error(`Campi mancanti (foto/lastuser). Trovati: ${Object.keys(sampleProps).join(', ')}`);\n\n  const fFoto=fieldMap['foto'];\n  const fUser=fieldMap['lastuser'];\n  const fAct =fieldMap['attivita']||fieldMap['attività']||null;\n\n  // trackMap: key = \"layerName|utente|data\"\n  const trackMap={};\n\n  for(const feat of features){\n    const props=feat.properties||{};\n    const fotoRaw=props[fFoto];\n    if(!fotoRaw) continue;\n\n    const user  =String(props[fUser]||'').trim();\n    const actVal=fAct?(String(props[fAct]||'').trim()||''):'';\n\n    // coordinate di QUESTA feature\n    let lat=null,lng=null;\n    if(feat.geometry){\n      const g=feat.geometry;\n      if(g.type==='Point'&&g.coordinates?.length>=2){lng=g.coordinates[0];lat=g.coordinates[1];}\n      else if((g.type==='MultiPoint'||g.type==='LineString')&&g.coordinates?.[0]){lng=g.coordinates[0][0];lat=g.coordinates[0][1];}\n    }\n    const hasCoords=(lat!==null&&lng!==null&&isFinite(lat)&&isFinite(lng));\n\n    // parse foto per estrarre data/ora\n    const fotoList=String(fotoRaw).split(',').map(s=>s.trim()).filter(Boolean);\n    const parsed  =fotoList.map(parseFotoName).filter(Boolean);\n    if(!parsed.length) continue;\n\n    // raggruppa per data\n    const byDate={};\n    for(const p of parsed)(byDate[p.date]=byDate[p.date]||[]).push(p.time);\n\n    for(const [dateStr,times] of Object.entries(byDate)){\n      const tEarliest=times.slice().sort()[0];\n      const tLatest  =times.slice().sort().pop();\n      const key=`${layerName}|${user}|${dateStr}`;\n\n      if(!trackMap[key]){\n        trackMap[key]={\n          layer:layerName,utente:labelUser(user),\n          data:dateStr,attivita:actVal,\n          tStart:tEarliest,tEnd:tLatest,\n          pointCount:1,           // ← PRODUZIONE = punti, non foto\n          points:[],\n        };\n      }else{\n        if(tEarliest<trackMap[key].tStart) trackMap[key].tStart=tEarliest;\n        if(tLatest  >trackMap[key].tEnd)   trackMap[key].tEnd  =tLatest;\n        trackMap[key].pointCount++;  // ogni feature = +1 punto\n      }\n\n      if(hasCoords){\n        trackMap[key].points.push({lat,lng,time:tEarliest});\n      }\n    }\n  }\n\n  const tracks=[],rows=[];\n  for(const [,t] of Object.entries(trackMap)){\n    t.points.sort((a,b)=>a.time.localeCompare(b.time));\n    // lunghezza linea retta iniziale (verrà aggiornata con routing ORS)\n    const lunghezza=Math.round(polylineLength(t.points));\n    let ore=0;\n    try{\n      const[sh,sm]=t.tStart.split(':').map(Number);\n      const[eh,em]=t.tEnd  .split(':').map(Number);\n      ore=Math.max(0,Math.round(((eh*60+em)-(sh*60+sm))/60*100)/100);\n    }catch(e){}\n    const[anno,mese,giorno]=t.data.split('-');\n\n    tracks.push({\n      key:`${t.layer}|${t.utente}|${t.data}`,\n      layer:t.layer,utente:t.utente,data:t.data,attivita:t.attivita,\n      anno,mese,inizio:t.tStart,fine:t.tEnd,\n      points:t.points,\n      lunghezza,          // aggiornato dopo routing\n      routedCoords:null,  // null = non ancora routato\n      routeIsReal:false,  // true se ORS ha risposto con successo\n    });\n\n    rows.push({\n      layer:t.layer,anno,mese,meseN:MONTH_NAMES[mese]||mese||'',\n      giorno,utente:t.utente,\n      inizio:t.tStart,fine:t.tEnd,\n      prod:t.pointCount,  // ← PUNTI, non foto\n      ore,lunghezza,\n      attivita:t.attivita,data:t.data,\n      trackKey:`${t.layer}|${t.utente}|${t.data}`,\n    });\n  }\n  return {rows,tracks};\n}\n\n// ── haversine & polyline ──────────────────────────────\nfunction haversine(a,b){\n  const R=6371000,rad=d=>d*Math.PI/180;\n  const dLat=rad(b.lat-a.lat),dLng=rad(b.lng-a.lng);\n  const x=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;\n  return R*2*Math.asin(Math.sqrt(x));\n}\nfunction polylineLength(pts){let d=0;for(let i=1;i<pts.length;i++)d+=haversine(pts[i-1],pts[i]);return d;}\n\nfunction parseFotoName(name){\n  const p=name.split('_').map(s=>s.trim()).filter(Boolean);\n  if(p.length<5)return null;\n  const[yyyy,mm,dd,hh,mi]=p;\n  if(!/^\\d{4}$/.test(yyyy)||!/^\\d{1,2}$/.test(mm)||!/^\\d{1,2}$/.test(dd))return null;\n  if(!/^\\d{1,2}$/.test(hh)||!/^\\d{1,2}$/.test(mi))return null;\n  try{\n    const mo=parseInt(mm),dy=parseInt(dd);\n    if(mo<1||mo>12||dy<1||dy>31)return null;\n    return{date:`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`,time:`${hh.padStart(2,'0')}:${mi.padStart(2,'0')}`};\n  }catch(e){return null;}\n}\nfunction labelUser(u){const s=String(u).trim();return s.includes('@')?s.split('@')[0]:s;}\n\n// ═══════════════════════════════════════════════════════\n// ORS ROUTING\n// Prende una traccia con ≥2 punti, chiama ORS foot-walking\n// con chunking automatico se i punti sono >50.\n// Restituisce { coords:[[lat,lng],...], distance:meters, isReal:true/false }\n// ═══════════════════════════════════════════════════════\nasync function routeTrack(track){\n  if(track.points.length<2) return null;\n\n  // cacheKey basato sulle coordinate dei punti\n  const cacheKey=track.points.map(p=>`${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');\n  if(routeCache.has(cacheKey)) return routeCache.get(cacheKey);\n\n  try{\n    // Se i punti sono tanti, splittiamo in chunk sovrapposti (ultimi 2 punti di ogni chunk\n    // diventano i primi 2 del chunk successivo per garantire continuità)\n    const pts=track.points;\n    let allCoords=[],totalDist=0;\n\n    for(let start=0;start<pts.length-1;start+=ORS_CHUNK-1){\n      const chunk=pts.slice(start,start+ORS_CHUNK);\n      if(chunk.length<2) break;\n\n      const waypoints=chunk.map(p=>[p.lng,p.lat]); // ORS vuole [lng,lat]\n      const body={coordinates:waypoints,instructions:false,geometry_simplify:false};\n\n      const res=await fetch(ORS_URL,{\n        method:'POST',\n        headers:{'Content-Type':'application/json','Authorization':ORS_KEY},\n        body:JSON.stringify(body),\n      });\n\n      if(!res.ok) throw new Error(`ORS ${res.status}`);\n      const data=await res.json();\n\n      const segCoords=data.features[0].geometry.coordinates.map(c=>[c[1],c[0]]); // → [lat,lng]\n      const segDist  =data.features[0].properties.summary.distance;\n\n      // evita duplicazione del punto di giunzione tra chunk\n      if(allCoords.length>0) allCoords.push(...segCoords.slice(1));\n      else allCoords=segCoords;\n      totalDist+=segDist;\n    }\n\n    const result={coords:allCoords,distance:Math.round(totalDist),isReal:true};\n    routeCache.set(cacheKey,result);\n    return result;\n\n  }catch(err){\n    // fallback: linea retta tra i punti originali\n    const result={\n      coords:track.points.map(p=>[p.lat,p.lng]),\n      distance:Math.round(polylineLength(track.points)),\n      isReal:false,\n    };\n    routeCache.set(cacheKey,result);\n    return result;\n  }\n}\n\n// ═══════════════════════════════════════════════════════\n// BUILD UI\n// ═══════════════════════════════════════════════════════\nfunction buildUI(){\n  emptyState.classList.add('hidden');\n  reportSection.classList.remove('hidden');\n  showExportBar();\n  populateFilters();buildLayerPills();applyFilters();initMap();\n}\n\nfunction buildLayerPills(){\n  layerPillsEl.innerHTML='';\n  const layers=[...new Set(ALL_ROWS.map(r=>r.layer))].sort();\n  const all=makePill('Tutti i layer',ALL_ROWS.length,null,null);\n  all.classList.add('active');layerPillsEl.appendChild(all);\n  layers.forEach((lyr,i)=>{\n    const count=ALL_ROWS.filter(r=>r.layer===lyr).length;\n    layerPillsEl.appendChild(makePill(lyr,count,lyr,LAYER_COLORS[i%LAYER_COLORS.length]));\n  });\n}\nfunction makePill(label,count,layerName,color){\n  const pill=document.createElement('div');\n  pill.className='layer-pill';pill.dataset.layer=layerName||'';\n  pill.innerHTML=color\n    ?`<span class=\"dot\" style=\"background:${color}\"></span>${esc(label)}<span class=\"pill-count\">${count}</span>`\n    :`${esc(label)}<span class=\"pill-count\">${count}</span>`;\n  pill.addEventListener('click',()=>{\n    document.querySelectorAll('.layer-pill').forEach(p=>p.classList.remove('active'));\n    pill.classList.add('active');\n    document.getElementById('f-layer').value=layerName||'';\n    applyFilters();\n  });\n  return pill;\n}\nfunction populateFilters(){\n  const sel=(id,vals,labelMap)=>{\n    const el=document.getElementById(id);\n    el.innerHTML='<option value=\"\">— Tutti —</option>';\n    [...vals].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=labelMap?(labelMap[v]||v):v;el.appendChild(o);});\n  };\n  sel('f-user',[...new Set(ALL_ROWS.map(r=>r.utente))].filter(Boolean));\n  sel('f-layer',[...new Set(ALL_ROWS.map(r=>r.layer))].filter(Boolean));\n  const mesiS=[...new Set(ALL_ROWS.map(r=>r.mese))].filter(Boolean).sort();\n  const mesiL={};mesiS.forEach(m=>mesiL[m]=MONTH_NAMES[m]||m);\n  sel('f-mese',mesiS,mesiL);\n  sel('f-anno',[...new Set(ALL_ROWS.map(r=>r.anno))].filter(Boolean));\n  sel('f-att',[...new Set(ALL_ROWS.map(r=>r.attivita))].filter(Boolean));\n}\n\n// ═══════════════════════════════════════════════════════\n// FILTRI\n//\n// Il filtro fascia oraria agisce sui SINGOLI PUNTI di ogni traccia.\n// Per ogni traccia che passa i filtri \"base\" (utente/layer/data/ecc.)\n// viene costruita una versione \"tagliata\" con solo i punti il cui\n// orario ricade nella fascia richiesta.\n// Produzione e lunghezza vengono ricalcolate su quei punti.\n// Se nessun punto della traccia ricade nella fascia, la traccia\n// viene esclusa del tutto.\n// ═══════════════════════════════════════════════════════\nfunction applyFilters(){\n  const search  =document.getElementById('f-search').value.toLowerCase().trim();\n  const user    =document.getElementById('f-user').value;\n  const mese    =document.getElementById('f-mese').value;\n  const att     =document.getElementById('f-att').value;\n  const anno    =document.getElementById('f-anno').value;\n  const layer   =document.getElementById('f-layer').value;\n  const dateFrom=document.getElementById('f-date-from').value;\n  const dateTo  =document.getElementById('f-date-to').value;\n  const oraFrom =document.getElementById('f-ora-from').value;\n  const oraTo   =document.getElementById('f-ora-to').value;\n  const hasOraFilter=!!(oraFrom||oraTo);\n\n  // ── 1. filtra le TRACCE base (tutto tranne fascia oraria) ──\n  const baseTracks=ALL_TRACKS.filter(t=>{\n    if(user    &&t.utente  !==user)   return false;\n    if(layer   &&t.layer   !==layer)  return false;\n    if(anno    &&t.anno    !==anno)   return false;\n    if(mese    &&t.mese    !==mese)   return false;\n    if(att     &&t.attivita!==att)    return false;\n    if(dateFrom&&t.data    <dateFrom) return false;\n    if(dateTo  &&t.data    >dateTo)   return false;\n    return true;\n  });\n\n  // ── 2. applica filtro orario a livello di singolo punto ──\n  // Produce tracce \"virtuali\" con punti ridotti e lunghezza ricalcolata\n  filteredTracks=[];\n  const filteredRowMap={}; // key → row aggiornata\n\n  for(const track of baseTracks){\n    // filtra i punti per fascia oraria\n    const pts=hasOraFilter\n      ? track.points.filter(p=>(!oraFrom||p.time>=oraFrom)&&(!oraTo||p.time<=oraTo))\n      : track.points;\n\n    if(!pts.length) continue; // traccia esclusa: nessun punto nella fascia\n\n    // orario effettivo = min/max degli orari dei punti filtrati\n    const times=pts.map(p=>p.time).sort();\n    const inizio=times[0], fine=times[times.length-1];\n\n    // ore ricalcolate\n    let ore=0;\n    try{\n      const[sh,sm]=inizio.split(':').map(Number);\n      const[eh,em]=fine  .split(':').map(Number);\n      ore=Math.max(0,Math.round(((eh*60+em)-(sh*60+sm))/60*100)/100);\n    }catch(e){}\n\n    // lunghezza ricalcolata sui soli punti filtrati (verrà aggiornata con ORS)\n    const lunghezza=Math.round(polylineLength(pts));\n\n    // crea traccia virtuale (non modifica l'originale)\n    const vtrack={\n      key:track.key,\n      layer:track.layer,utente:track.utente,data:track.data,attivita:track.attivita,\n      anno:track.anno,mese:track.mese,\n      inizio,fine,\n      points:pts,            // solo punti nella fascia\n      lunghezza,\n      routedCoords:null,     // forza nuovo routing sui punti ridotti\n      routeIsReal:false,\n      _oraFilter:hasOraFilter, // flag per sapere se è una traccia tagliata\n    };\n    filteredTracks.push(vtrack);\n\n    // row corrispondente aggiornata\n    filteredRowMap[track.key]={\n      layer:track.layer,\n      anno:track.anno,mese:track.mese,\n      meseN:MONTH_NAMES[track.mese]||track.mese||'',\n      giorno:track.data.split('-')[2]||'',\n      utente:track.utente,\n      inizio,fine,\n      prod:pts.length,       // produzione = punti nella fascia\n      ore,lunghezza,\n      attivita:track.attivita,\n      data:track.data,\n      trackKey:track.key,\n    };\n  }\n\n  // ── 3. costruisci filtered (array di row) dal filteredRowMap ──\n  filtered=Object.values(filteredRowMap);\n\n  // applica filtro testo libero\n  if(search){\n    filtered=filtered.filter(r=>{\n      const hay=[r.layer,r.anno,r.meseN,r.giorno,r.utente,r.inizio,r.fine,r.prod,r.ore,r.lunghezza,r.attivita,r.data].join(' ').toLowerCase();\n      return hay.includes(search);\n    });\n    // sincronizza filteredTracks\n    const fk=new Set(filtered.map(r=>r.trackKey));\n    filteredTracks=filteredTracks.filter(t=>fk.has(t.key));\n  }\n\n  if(sortCol) doSort();\n  render();\n  renderMapWithRouting();\n}\n\nfunction doSort(){\n  filtered.sort((a,b)=>{\n    let av=a[sortCol]??'',bv=b[sortCol]??'';\n    const an=parseFloat(String(av).replace(',','.')),bn=parseFloat(String(bv).replace(',','.'));\n    if(!isNaN(an)&&!isNaN(bn)){av=an;bv=bn;}else{av=String(av).toLowerCase();bv=String(bv).toLowerCase();}\n    if(av<bv)return sortAsc?-1:1;if(av>bv)return sortAsc?1:-1;return 0;\n  });\n}\ndocument.querySelectorAll('thead th[data-col]').forEach(th=>{\n  th.addEventListener('click',()=>{\n    const col=th.dataset.col;\n    if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}\n    doSort();updateSortUi();render();\n  });\n});\nfunction updateSortUi(){\n  document.querySelectorAll('thead th[data-col]').forEach(th=>{\n    th.classList.remove('asc','desc');\n    if(th.dataset.col===sortCol)th.classList.add(sortAsc?'asc':'desc');\n    const si=th.querySelector('.si');\n    if(si)si.textContent=th.dataset.col===sortCol?(sortAsc?'▲':'▼'):'⇅';\n  });\n}\n\n// ═══════════════════════════════════════════════════════\n// RENDER TABLE + KPI\n// ═══════════════════════════════════════════════════════\nfunction render(){\n  // mappa key→lunghezza dalle tracce virtuali filtrate (già aggiornate con ORS se disponibile)\n  const trackLunMap={};\n  filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);\n\n  const totProd=filtered.reduce((s,r)=>s+r.prod,0);\n  const totOre =Math.round(filtered.reduce((s,r)=>s+r.ore,0)*100)/100;\n  const totLun =filtered.reduce((s,r)=>s+(trackLunMap[r.trackKey]||r.lunghezza),0);\n  const nUtenti=new Set(filtered.map(r=>r.utente)).size;\n\n  document.getElementById('kpi-rows').textContent  =fmt(filtered.length,0);\n  document.getElementById('kpi-prod').textContent  =fmt(totProd,0);\n  document.getElementById('kpi-ore').textContent   =fmt(totOre,2);\n  document.getElementById('kpi-lun').textContent   =totLun>=1000?fmt(Math.round(totLun/10)/100,2)+' km':fmt(Math.round(totLun),0)+' m';\n  document.getElementById('kpi-utenti').textContent=nUtenti;\n\n  const msg=`${filtered.length} di ${ALL_ROWS.length} record`;\n  document.getElementById('result-info').textContent=msg;\n  document.getElementById('footer-count').textContent=msg;\n\n  tblBody.innerHTML=filtered.length\n    ?filtered.map(r=>buildRow(r,trackLunMap[r.trackKey]||r.lunghezza)).join('')\n    :'<tr><td colspan=\"11\" class=\"no-res\">Nessun risultato con i filtri correnti.</td></tr>';\n\n  renderCharts();\n}\n\nfunction buildRow(r,lun){\n  const lunStr=lun>0?fmt(Math.round(lun),0)+' m':'—';\n  return `<tr>\n    <td><span class=\"tag-layer\">${esc(r.layer)}</span></td>\n    <td>${esc(r.anno)}</td><td>${esc(r.meseN)}</td><td>${esc(r.giorno)}</td>\n    <td><span class=\"tag-user\">${esc(r.utente)}</span></td>\n    <td>${esc(r.inizio)}</td><td>${esc(r.fine)}</td>\n    <td style=\"font-weight:700\">${fmt(r.prod,0)}</td>\n    <td>${fmt(r.ore,2)}</td>\n    <td style=\"font-weight:600;color:#39d353\">${lunStr}</td>\n    <td>${r.attivita?`<span class=\"tag-act\">${esc(r.attivita)}</span>`:'<span style=\"color:var(--muted)\">—</span>'}</td>\n  </tr>`;\n}\n\n// ═══════════════════════════════════════════════════════\n// CHARTS\n// ═══════════════════════════════════════════════════════\nfunction aggr(data,kFn,vFn){const m={};data.forEach(r=>{const k=kFn(r)||'N/D';m[k]=(m[k]||0)+vFn(r);});return Object.entries(m).sort((a,b)=>b[1]-a[1]);}\nfunction renderBarList(id,entries,dec,cls){\n  const el=document.getElementById(id);\n  if(!entries.length){el.innerHTML='<div class=\"empty-chart\">Nessun dato</div>';return;}\n  const max=entries[0][1]||1;\n  el.innerHTML=entries.slice(0,8).map(([k,v])=>{\n    const w=Math.max(3,(v/max)*100);\n    return `<div class=\"bar-item\"><div class=\"bar-label\" title=\"${esc(k)}\">${esc(k)}</div><div class=\"bar-track\"><div class=\"bar-fill ${cls}\" style=\"width:${w}%\"></div></div><div class=\"bar-val\">${fmt(v,dec)}</div></div>`;\n  }).join('');\n}\nfunction renderCharts(){\n  renderBarList('chart-user', aggr(filtered,r=>r.utente,  r=>r.prod),0,'c0');\n  renderBarList('chart-mese', aggr(filtered,r=>r.meseN,   r=>r.ore), 2,'c1');\n  renderBarList('chart-layer',aggr(filtered,r=>r.layer,   r=>r.prod),0,'c3');\n  renderBarList('chart-att',  aggr(filtered,r=>r.attivita,r=>r.prod),0,'c2');\n}\n\n// ═══════════════════════════════════════════════════════\n// MAPPA\n// ═══════════════════════════════════════════════════════\nfunction initMap(){\n  if(leafletMap)return;\n  leafletMap=L.map('map-container',{zoomControl:true});\n  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{\n    attribution:'© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>',maxZoom:19\n  }).addTo(leafletMap);\n  setTimeout(()=>leafletMap.invalidateSize(),200);\n}\n\nfunction setMapView(v){\n  mapView=v;\n  document.getElementById('btn-view-day').classList.toggle('active',v==='day');\n  document.getElementById('btn-view-layer').classList.toggle('active',v==='layer');\n  renderMapWithRouting();\n}\n\nfunction fitMap(){\n  if(!leafletMap||!mapLayers.length)return;\n  const bounds=L.latLngBounds([]);\n  mapLayers.forEach(l=>{try{bounds.extend(l.getBounds());}catch(e){try{bounds.extend(l.getLatLng());}catch(e2){}}});\n  if(bounds.isValid())leafletMap.fitBounds(bounds,{padding:[28,28]});\n}\n\nfunction colorForKey(key,palette){\n  let h=0;for(let i=0;i<key.length;i++)h=(h*31+key.charCodeAt(i))>>>0;\n  return palette[h%palette.length];\n}\nfunction buildLayerColorMap(){\n  const m={};\n  [...new Set(ALL_ROWS.map(r=>r.layer))].sort().forEach((lyr,i)=>{m[lyr]=LAYER_COLORS[i%LAYER_COLORS.length];});\n  return m;\n}\n\n// Wrapper asincrono: calcola routing ORS per le tracce filtrate, poi disegna\nasync function renderMapWithRouting(){\n  if(!leafletMap)return;\n\n  // tracce con ≥2 punti che non hanno ancora un routing calcolato\n  // per i punti correnti (il cacheKey è basato sui punti effettivi)\n  const toRoute=filteredTracks.filter(t=>{\n    if(t.points.length<2) return false;\n    const ck=t.points.map(p=>`${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');\n    if(routeCache.has(ck)){\n      // già in cache: applica subito\n      const cached=routeCache.get(ck);\n      t.routedCoords=cached.coords;\n      t.lunghezza   =cached.distance;\n      t.routeIsReal =cached.isReal;\n      return false;\n    }\n    return true;\n  });\n\n  if(toRoute.length>0){\n    routingOverlay.classList.add('show');\n    let done=0;\n    for(const track of toRoute){\n      routingLabel.textContent=`Calcolo percorso su strada… (${done+1}/${toRoute.length})`;\n      routingSub.textContent=`${track.utente} — ${track.data}`;\n      const result=await routeTrack(track);\n      if(result){\n        track.routedCoords=result.coords;\n        track.lunghezza   =result.distance;\n        track.routeIsReal =result.isReal;\n      }\n      done++;\n    }\n    routingOverlay.classList.remove('show');\n    // aggiorna tabella/kpi con le nuove lunghezze\n    render();\n  }\n\n  drawMap();\n}\n\nfunction drawMap(){\n  mapLayers.forEach(l=>leafletMap.removeLayer(l));mapLayers=[];\n  if(!filteredTracks.length){\n    document.getElementById('map-legend').innerHTML='<span style=\"color:var(--muted);font-size:12px\">Nessun dato da visualizzare con i filtri correnti.</span>';\n    return;\n  }\n\n  const layerColorMap=buildLayerColorMap();\n  const legendItems={};\n  let nRouted=0,nFallback=0;\n\n  filteredTracks.forEach(track=>{\n    if(!track.points.length)return;\n    const color=mapView==='day'?colorForKey(track.data,DAY_PALETTE):layerColorMap[track.layer]||'#58a6ff';\n    const lun=track.lunghezza>0?fmt(Math.round(track.lunghezza),0)+' m':'N/D';\n\n    // usa routedCoords se disponibile, altrimenti linea retta tra i punti\n    const lineCoords=track.routedCoords||track.points.map(p=>[p.lat,p.lng]);\n    const isReal=track.routeIsReal===true;\n    if(isReal)nRouted++;else if(track.points.length>=2)nFallback++;\n\n    if(lineCoords.length>=2){\n      const poly=L.polyline(lineCoords,{\n        color,weight:isReal?3.5:2.5,\n        opacity:isReal?.9:.65,\n        dashArray:isReal?null:'6,5',  // tratteggiato = fallback linea retta\n      });\n      poly.bindPopup(buildPopupLine(track,lun,color,isReal));\n      poly.addTo(leafletMap);mapLayers.push(poly);\n    }\n\n    // marker sui punti rilevati originali (non sui punti interpolati dal routing)\n    track.points.forEach((p,idx)=>{\n      const isFirst=idx===0,isLast=idx===track.points.length-1;\n      const isEnd=isFirst||isLast;\n      const marker=L.circleMarker([p.lat,p.lng],{\n        radius:isEnd?7:4,color,fillColor:color,fillOpacity:isEnd?1:.55,weight:isEnd?2:1,\n      });\n      marker.bindPopup(buildPopupPoint(track,p,idx,color,lun));\n      marker.addTo(leafletMap);mapLayers.push(marker);\n    });\n\n    if(mapView==='day') legendItems[track.data]=color;\n    else legendItems[track.layer]=color;\n  });\n\n  // legenda\n  const entries=Object.entries(legendItems).sort((a,b)=>a[0].localeCompare(b[0]));\n  const labelKey=mapView==='day'?'GIORNI':'LAYER';\n  let legendHtml=(entries.length?`<span style=\"font-size:11px;color:var(--muted);margin-right:6px;font-weight:700\">${labelKey}:</span>`:'')+\n    entries.map(([k,c])=>\n      mapView==='day'\n        ?`<span class=\"legend-item\"><span class=\"legend-dot\" style=\"background:${c}\"></span>${esc(k)}</span>`\n        :`<span class=\"legend-item\"><span class=\"legend-line\" style=\"background:${c}\"></span>${esc(k)}</span>`\n    ).join('');\n  // indicatore routing\n  if(nRouted>0||nFallback>0){\n    legendHtml+=`<span style=\"margin-left:auto;display:flex;gap:8px;align-items:center\">`;\n    if(nRouted>0)   legendHtml+=`<span class=\"legend-item\"><span class=\"legend-line\" style=\"background:var(--blue)\"></span><span style=\"color:var(--blue)\">Percorso reale (${nRouted})</span></span>`;\n    if(nFallback>0) legendHtml+=`<span class=\"legend-item\"><span class=\"legend-dashed\" style=\"color:var(--orange)\"></span><span style=\"color:var(--orange)\">Linea retta (${nFallback})</span></span>`;\n    legendHtml+=`</span>`;\n  }\n  document.getElementById('map-legend').innerHTML=legendHtml;\n}\n\nfunction buildPopupLine(track,lun,color,isReal){\n  const routeType=isReal\n    ?`<span class=\"route-badge routed\">🛣 percorso reale</span>`\n    :`<span class=\"route-badge fallback\">↗ linea retta</span>`;\n  return `<div class=\"popup-title\" style=\"color:${color}\">📍 Percorso — ${esc(track.data)} ${routeType}</div>\n    <div class=\"popup-row\"><span class=\"pk\">Operatore</span><span class=\"pv purple\">${esc(track.utente)}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Layer</span><span class=\"pv blue\">${esc(track.layer)}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Orario</span><span class=\"pv\">${esc(track.inizio)} → ${esc(track.fine)}</span></div>\n    <hr class=\"popup-divider\">\n    <div class=\"popup-row\"><span class=\"pk\">Punti rilevati</span><span class=\"pv\">${track.points.length}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Lunghezza tratto</span><span class=\"pv green\">${lun}</span></div>\n    ${track.attivita?`<div class=\"popup-row\"><span class=\"pk\">Attività</span><span class=\"pv\">${esc(track.attivita)}</span></div>`:''}`;\n}\n\nfunction buildPopupPoint(track,p,idx,color,lun){\n  const pos=idx===0?'🟢 Inizio':idx===track.points.length-1?'🔴 Fine':`Punto ${idx+1}`;\n  return `<div class=\"popup-title\" style=\"color:${color}\">${pos}</div>\n    <div class=\"popup-row\"><span class=\"pk\">Operatore</span><span class=\"pv purple\">${esc(track.utente)}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Data</span><span class=\"pv\">${esc(track.data)}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Ora</span><span class=\"pv\">${esc(p.time)}</span></div>\n    <div class=\"popup-row\"><span class=\"pk\">Lunghezza percorso</span><span class=\"pv green\">${lun}</span></div>`;\n}\n\n// ═══════════════════════════════════════════════════════\n// CSV EXPORT\n// ═══════════════════════════════════════════════════════\ndocument.getElementById('btn-export-csv').addEventListener('click',()=>{\n  const trackLunMap={};filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);\n  const headers=['Layer','Anno','Mese','Giorno','Operatore','Inizio','Fine','Produzione (punti)','Ore','Lunghezza (m)','Attivita'];\n  const lines=[headers,...filtered.map(r=>[r.layer,r.anno,r.meseN,r.giorno,r.utente,r.inizio,r.fine,r.prod,r.ore,Math.round(trackLunMap[r.trackKey]||r.lunghezza),r.attivita])]\n    .map(cols=>cols.map(v=>`\"${String(v??'').replace(/\"/g,'\"\"')}\"`).join(';'));\n  const blob=new Blob(['\\uFEFF'+lines.join('\\n')],{type:'text/csv;charset=utf-8'});\n  const a=document.createElement('a');a.href=URL.createObjectURL(blob);\n  a.download=`report_produzione_${new Date().toISOString().slice(0,10)}.csv`;\n  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);\n});\n\n// ═══════════════════════════════════════════════════════\n// EVENTI FILTRI\n// ═══════════════════════════════════════════════════════\n['f-search','f-user','f-layer','f-mese','f-att','f-anno','f-date-from','f-date-to','f-ora-from','f-ora-to'].forEach(id=>{\n  const el=document.getElementById(id);\n  el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{\n    if(id==='f-layer'){\n      const val=el.value;\n      document.querySelectorAll('.layer-pill').forEach(p=>{\n        p.classList.toggle('active',p.dataset.layer===val||(!val&&p.dataset.layer===''));\n      });\n    }\n    applyFilters();\n  });\n});\ndocument.getElementById('btn-applica').addEventListener('click',applyFilters);\ndocument.getElementById('btn-reset').addEventListener('click',()=>{\n  ['f-search','f-user','f-layer','f-mese','f-att','f-anno','f-date-from','f-date-to','f-ora-from','f-ora-to'].forEach(id=>document.getElementById(id).value='');\n  sortCol=null;sortAsc=true;updateSortUi();\n  document.querySelectorAll('.layer-pill').forEach((p,i)=>p.classList.toggle('active',i===0));\n  applyFilters();\n});\n\n// ═══════════════════════════════════════════════════════\n// UTILITY\n// ═══════════════════════════════════════════════════════\nfunction esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}\nfunction fmt(n,dec){return Number(n).toLocaleString('it-IT',{minimumFractionDigits:dec,maximumFractionDigits:dec});}\nfunction setProgress(pct,label){progressBar.style.width=pct+'%';progressLabel.textContent=label;}\nfunction showProgress(show){progressWrap.style.display=show?'block':'none';}\nfunction clearAlerts(){alertsEl.innerHTML='';}\nfunction addAlert(type,msg){\n  const cls=type==='error'?'alert-err':type==='warn'?'alert-warn':'alert-ok';\n  const div=document.createElement('div');div.className=`alert ${cls}`;div.innerHTML=msg;alertsEl.appendChild(div);\n}\n\n// ═══════════════════════════════════════════════════════\n// EXPORT BAR\n// ═══════════════════════════════════════════════════════\n\n// Mostra la barra dopo il caricamento dei dati\nfunction showExportBar(){\n  document.getElementById('export-bar').classList.remove('hidden-bar');\n  // aggiorna la nota in base al supporto File System Access API\n  const hasFS=!!(window.showSaveFilePicker);\n  document.getElementById('export-bar-note').textContent=hasFS\n    ? 'Scegli nome e percorso nella finestra di dialogo'\n    : 'Il file verrà scaricato nella cartella Download del browser';\n}\n\n// Salvataggio generico: usa File System Access API se disponibile, altrimenti download\nasync function saveFile(content, suggestedName, mimeType, description, extensions){\n  const blob=new Blob([content],{type:mimeType});\n  if(window.showSaveFilePicker){\n    try{\n      const handle=await window.showSaveFilePicker({\n        suggestedName,\n        types:[{description, accept:{[mimeType]:extensions}}],\n      });\n      const writable=await handle.createWritable();\n      await writable.write(blob);\n      await writable.close();\n      return; // successo\n    }catch(e){\n      if(e.name==='AbortError') return; // utente ha annullato\n      // altri errori: cade nel fallback\n    }\n  }\n  // fallback: download classico\n  const a=document.createElement('a');\n  a.href=URL.createObjectURL(blob);\n  a.download=suggestedName;\n  document.body.appendChild(a);a.click();document.body.removeChild(a);\n  URL.revokeObjectURL(a.href);\n}\n\n// ── Costruisce il CSV dei dati filtrati ─────────────\nfunction buildCSVContent(){\n  const trackLunMap={};filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);\n  const headers=['Layer','Anno','Mese','Giorno','Operatore','Inizio','Fine','Produzione (punti)','Ore','Lunghezza (m)','Attivita'];\n  const lines=[headers,...filtered.map(r=>[\n    r.layer,r.anno,r.meseN,r.giorno,r.utente,\n    r.inizio,r.fine,r.prod,r.ore,\n    Math.round(trackLunMap[r.trackKey]||r.lunghezza),\n    r.attivita\n  ])].map(cols=>cols.map(v=>`\"${String(v??'').replace(/\"/g,'\"\"')}\"`).join(';'));\n  return '\\uFEFF'+lines.join('\\n');\n}\n\nfunction buildHTMLContent(){\n  // Versione esportata: non ri-esportabile (i dati sono già embedded)\n  addAlert('warn','Questo file è già un report esportato. Per generare un nuovo export, usa il file sorgente originale.');\n  return null;\n}\n\n// [Salva HTML disabilitato nel file esportato]\n\n\n// ── Pulsante Salva CSV ───────────────────────────────\ndocument.getElementById('btn-save-csv').addEventListener('click', async ()=>{\n  if(!ALL_ROWS.length){addAlert('warn','Carica prima uno ZIP con dati.');return;}\n  const dateStr=new Date().toISOString().slice(0,10);\n  const suggestedName=`report_produzione_${dateStr}.csv`;\n  const content=buildCSVContent();\n  await saveFile(content, suggestedName, 'text/csv;charset=utf-8', 'File CSV', ['.csv']);\n});\n\n<\/script>\n\n<script>\n// ── Dati precaricati ──\n/*__DATA_PLACEHOLDER__*/\n<\/script>\n<\/body>\n<\/html>\n";
+
+// ── Boot automatico se il file è stato esportato con dati embedded ──
+document.addEventListener('DOMContentLoaded',()=>{
+  if(typeof __EMBEDDED_ROWS__ !== 'undefined' && __EMBEDDED_ROWS__ && __EMBEDDED_ROWS__.length){
+    ALL_ROWS   = __EMBEDDED_ROWS__;
+    ALL_TRACKS = __EMBEDDED_TRACKS__;
+    // Ripristina cache routing dai percorsi già calcolati
+    ALL_TRACKS.forEach(t=>{
+      if(t.routedCoords && t.points && t.points.length>=2){
+        const ck=t.points.map(p=>p.lng.toFixed(6)+','+p.lat.toFixed(6)).join('|');
+        routeCache.set(ck,{coords:t.routedCoords,distance:t.lunghezza,isReal:t.routeIsReal});
+      }
+    });
+    document.getElementById('drop-title').textContent='📂 Dati precaricati';
+    document.getElementById('drop-sub').textContent=ALL_ROWS.length+' record · trascina un nuovo ZIP per aggiornare';
+    buildUI();
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════
+const dropZone     =document.getElementById('drop-zone');
+const fileInput    =document.getElementById('file-input');
+const progressWrap =document.getElementById('progress-wrap');
+const progressBar  =document.getElementById('progress-bar');
+const progressLabel=document.getElementById('progress-label');
+const alertsEl     =document.getElementById('alerts');
+const reportSection=document.getElementById('report-section');
+const emptyState   =document.getElementById('empty-state');
+const tblBody      =document.getElementById('tbl-body');
+const layerPillsEl =document.getElementById('layer-pills');
+const routingOverlay=document.getElementById('map-routing-overlay');
+const routingLabel =document.getElementById('routing-label');
+const routingSub   =document.getElementById('routing-sub');
+
+// ═══════════════════════════════════════════════════════
+// DRAG & DROP
+// ═══════════════════════════════════════════════════════
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files[0])processZip(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',()=>{if(fileInput.files[0])processZip(fileInput.files[0]);});
+
+// ═══════════════════════════════════════════════════════
+// ZIP
+// ═══════════════════════════════════════════════════════
+async function processZip(file){
+  clearAlerts();setProgress(0,'Apertura ZIP…');showProgress(true);
+  try{
+    const zip=await JSZip.loadAsync(file);
+    const allFiles=Object.keys(zip.files);
+    const shpFiles=allFiles.filter(n=>n.toLowerCase().endsWith('.shp')&&!zip.files[n].dir);
+    if(!shpFiles.length){addAlert('error','Nessun file .shp trovato nello ZIP.');showProgress(false);return;}
+    setProgress(10,`Trovati ${shpFiles.length} shapefile…`);
+    const allRows=[],allTracks=[],errors=[];let processed=0;
+    for(const shpPath of shpFiles){
+      const layerName=shpPath.replace(/\.shp$/i,'').replace(/.*\//,'');
+      const basePath=shpPath.replace(/\.shp$/i,'');
+      try{
+        const shpBuf=await zip.files[shpPath].async('arraybuffer');
+        const dbfKey=allFiles.find(n=>n.toLowerCase()===basePath.toLowerCase()+'.dbf');
+        if(!dbfKey){errors.push(`${layerName}: .dbf mancante`);continue;}
+        const dbfBuf=await zip.files[dbfKey].async('arraybuffer');
+        const {rows,tracks}=await parseShapefile(shpBuf,dbfBuf,layerName);
+        allRows.push(...rows);allTracks.push(...tracks);processed++;
+      }catch(err){errors.push(`${layerName}: ${err.message||err}`);}
+      setProgress(10+Math.round(80*(processed/shpFiles.length)),`Elaborato: ${layerName}`);
+    }
+    if(errors.length) addAlert('warn','Alcuni layer saltati:<br>'+errors.map(e=>`• ${e}`).join('<br>'));
+    if(!allRows.length){addAlert('error','Nessun record valido trovato.');showProgress(false);return;}
+    allRows.sort((a,b)=>(a.data+a.layer+a.utente).localeCompare(b.data+b.layer+b.utente));
+    ALL_ROWS=allRows;ALL_TRACKS=allTracks;
+    setProgress(100,`${allRows.length} record da ${processed} layer`);
+    addAlert('ok',`✓ Caricati <strong>${allRows.length}</strong> record da <strong>${processed}</strong> shapefile.`);
+    setTimeout(()=>showProgress(false),800);
+    dropZone.classList.add('loaded');
+    document.getElementById('drop-title').textContent=`📂 ${file.name}`;
+    document.getElementById('drop-sub').textContent=`${allRows.length} record — ${processed} layer — clicca per cambiare file`;
+    buildUI();
+  }catch(err){addAlert('error','Errore ZIP: '+err.message);showProgress(false);}
+}
+
+// ═══════════════════════════════════════════════════════
+// SHAPEFILE PARSING
+// produzione = numero di PUNTI (feature), non numero di foto
+// ═══════════════════════════════════════════════════════
+async function parseShapefile(shpBuf,dbfBuf,layerName){
+  const source=await shapefile.open(shpBuf,dbfBuf);
+  const features=[];
+  while(true){const r=await source.read();if(r.done)break;features.push(r.value);}
+  if(!features.length) return {rows:[],tracks:[]};
+
+  const sampleProps=features[0].properties||{};
+  const fieldMap={};
+  for(const k of Object.keys(sampleProps)) fieldMap[k.toLowerCase().trim()]=k;
+  if(!fieldMap['foto']||!fieldMap['lastuser'])
+    throw new Error(`Campi mancanti (foto/lastuser). Trovati: ${Object.keys(sampleProps).join(', ')}`);
+
+  const fFoto=fieldMap['foto'];
+  const fUser=fieldMap['lastuser'];
+  const fAct =fieldMap['attivita']||fieldMap['attività']||null;
+
+  // trackMap: key = "layerName|utente|data"
+  const trackMap={};
+
+  for(const feat of features){
+    const props=feat.properties||{};
+    const fotoRaw=props[fFoto];
+    if(!fotoRaw) continue;
+
+    const user  =String(props[fUser]||'').trim();
+    const actVal=fAct?(String(props[fAct]||'').trim()||''):'';
+
+    // coordinate di QUESTA feature
+    let lat=null,lng=null;
+    if(feat.geometry){
+      const g=feat.geometry;
+      if(g.type==='Point'&&g.coordinates?.length>=2){lng=g.coordinates[0];lat=g.coordinates[1];}
+      else if((g.type==='MultiPoint'||g.type==='LineString')&&g.coordinates?.[0]){lng=g.coordinates[0][0];lat=g.coordinates[0][1];}
+    }
+    const hasCoords=(lat!==null&&lng!==null&&isFinite(lat)&&isFinite(lng));
+
+    // parse foto per estrarre data/ora
+    const fotoList=String(fotoRaw).split(',').map(s=>s.trim()).filter(Boolean);
+    const parsed  =fotoList.map(parseFotoName).filter(Boolean);
+    if(!parsed.length) continue;
+
+    // raggruppa per data
+    const byDate={};
+    for(const p of parsed)(byDate[p.date]=byDate[p.date]||[]).push(p.time);
+
+    for(const [dateStr,times] of Object.entries(byDate)){
+      const tEarliest=times.slice().sort()[0];
+      const tLatest  =times.slice().sort().pop();
+      const key=`${layerName}|${user}|${dateStr}`;
+
+      if(!trackMap[key]){
+        trackMap[key]={
+          layer:layerName,utente:labelUser(user),
+          data:dateStr,attivita:actVal,
+          tStart:tEarliest,tEnd:tLatest,
+          pointCount:1,           // ← PRODUZIONE = punti, non foto
+          points:[],
+        };
+      }else{
+        if(tEarliest<trackMap[key].tStart) trackMap[key].tStart=tEarliest;
+        if(tLatest  >trackMap[key].tEnd)   trackMap[key].tEnd  =tLatest;
+        trackMap[key].pointCount++;  // ogni feature = +1 punto
+      }
+
+      if(hasCoords){
+        trackMap[key].points.push({lat,lng,time:tEarliest});
+      }
+    }
+  }
+
+  const tracks=[],rows=[];
+  for(const [,t] of Object.entries(trackMap)){
+    t.points.sort((a,b)=>a.time.localeCompare(b.time));
+    // lunghezza linea retta iniziale (verrà aggiornata con routing ORS)
+    const lunghezza=Math.round(polylineLength(t.points));
+    let ore=0;
+    try{
+      const[sh,sm]=t.tStart.split(':').map(Number);
+      const[eh,em]=t.tEnd  .split(':').map(Number);
+      ore=Math.max(0,Math.round(((eh*60+em)-(sh*60+sm))/60*100)/100);
+    }catch(e){}
+    const[anno,mese,giorno]=t.data.split('-');
+
+    tracks.push({
+      key:`${t.layer}|${t.utente}|${t.data}`,
+      layer:t.layer,utente:t.utente,data:t.data,attivita:t.attivita,
+      anno,mese,inizio:t.tStart,fine:t.tEnd,
+      points:t.points,
+      lunghezza,          // aggiornato dopo routing
+      routedCoords:null,  // null = non ancora routato
+      routeIsReal:false,  // true se ORS ha risposto con successo
+    });
+
+    rows.push({
+      layer:t.layer,anno,mese,meseN:MONTH_NAMES[mese]||mese||'',
+      giorno,utente:t.utente,
+      inizio:t.tStart,fine:t.tEnd,
+      prod:t.pointCount,  // ← PUNTI, non foto
+      ore,lunghezza,
+      attivita:t.attivita,data:t.data,
+      trackKey:`${t.layer}|${t.utente}|${t.data}`,
+    });
+  }
+  return {rows,tracks};
+}
+
+// ── haversine & polyline ──────────────────────────────
+function haversine(a,b){
+  const R=6371000,rad=d=>d*Math.PI/180;
+  const dLat=rad(b.lat-a.lat),dLng=rad(b.lng-a.lng);
+  const x=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return R*2*Math.asin(Math.sqrt(x));
+}
+function polylineLength(pts){let d=0;for(let i=1;i<pts.length;i++)d+=haversine(pts[i-1],pts[i]);return d;}
+
+function parseFotoName(name){
+  const p=name.split('_').map(s=>s.trim()).filter(Boolean);
+  if(p.length<5)return null;
+  const[yyyy,mm,dd,hh,mi]=p;
+  if(!/^\d{4}$/.test(yyyy)||!/^\d{1,2}$/.test(mm)||!/^\d{1,2}$/.test(dd))return null;
+  if(!/^\d{1,2}$/.test(hh)||!/^\d{1,2}$/.test(mi))return null;
+  try{
+    const mo=parseInt(mm),dy=parseInt(dd);
+    if(mo<1||mo>12||dy<1||dy>31)return null;
+    return{date:`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`,time:`${hh.padStart(2,'0')}:${mi.padStart(2,'0')}`};
+  }catch(e){return null;}
+}
+function labelUser(u){const s=String(u).trim();return s.includes('@')?s.split('@')[0]:s;}
+
+// ═══════════════════════════════════════════════════════
+// ORS ROUTING
+// Prende una traccia con ≥2 punti, chiama ORS foot-walking
+// con chunking automatico se i punti sono >50.
+// Restituisce { coords:[[lat,lng],...], distance:meters, isReal:true/false }
+// ═══════════════════════════════════════════════════════
+async function routeTrack(track){
+  if(track.points.length<2) return null;
+
+  // cacheKey basato sulle coordinate dei punti
+  const cacheKey=track.points.map(p=>`${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
+  if(routeCache.has(cacheKey)) return routeCache.get(cacheKey);
+
+  try{
+    // Se i punti sono tanti, splittiamo in chunk sovrapposti (ultimi 2 punti di ogni chunk
+    // diventano i primi 2 del chunk successivo per garantire continuità)
+    const pts=track.points;
+    let allCoords=[],totalDist=0;
+
+    for(let start=0;start<pts.length-1;start+=ORS_CHUNK-1){
+      const chunk=pts.slice(start,start+ORS_CHUNK);
+      if(chunk.length<2) break;
+
+      const waypoints=chunk.map(p=>[p.lng,p.lat]); // ORS vuole [lng,lat]
+      const body={coordinates:waypoints,instructions:false,geometry_simplify:false};
+
+      const res=await fetch(ORS_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':ORS_KEY},
+        body:JSON.stringify(body),
+      });
+
+      if(!res.ok) throw new Error(`ORS ${res.status}`);
+      const data=await res.json();
+
+      const segCoords=data.features[0].geometry.coordinates.map(c=>[c[1],c[0]]); // → [lat,lng]
+      const segDist  =data.features[0].properties.summary.distance;
+
+      // evita duplicazione del punto di giunzione tra chunk
+      if(allCoords.length>0) allCoords.push(...segCoords.slice(1));
+      else allCoords=segCoords;
+      totalDist+=segDist;
+    }
+
+    const result={coords:allCoords,distance:Math.round(totalDist),isReal:true};
+    routeCache.set(cacheKey,result);
+    return result;
+
+  }catch(err){
+    // fallback: linea retta tra i punti originali
+    const result={
+      coords:track.points.map(p=>[p.lat,p.lng]),
+      distance:Math.round(polylineLength(track.points)),
+      isReal:false,
+    };
+    routeCache.set(cacheKey,result);
+    return result;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// BUILD UI
+// ═══════════════════════════════════════════════════════
+function buildUI(){
+  emptyState.classList.add('hidden');
+  reportSection.classList.remove('hidden');
+  showExportBar();
+  populateFilters();buildLayerPills();applyFilters();initMap();
+}
+
+function buildLayerPills(){
+  layerPillsEl.innerHTML='';
+  const layers=[...new Set(ALL_ROWS.map(r=>r.layer))].sort();
+  const all=makePill('Tutti i layer',ALL_ROWS.length,null,null);
+  all.classList.add('active');layerPillsEl.appendChild(all);
+  layers.forEach((lyr,i)=>{
+    const count=ALL_ROWS.filter(r=>r.layer===lyr).length;
+    layerPillsEl.appendChild(makePill(lyr,count,lyr,LAYER_COLORS[i%LAYER_COLORS.length]));
+  });
+}
+function makePill(label,count,layerName,color){
+  const pill=document.createElement('div');
+  pill.className='layer-pill';pill.dataset.layer=layerName||'';
+  pill.innerHTML=color
+    ?`<span class="dot" style="background:${color}"></span>${esc(label)}<span class="pill-count">${count}</span>`
+    :`${esc(label)}<span class="pill-count">${count}</span>`;
+  pill.addEventListener('click',()=>{
+    document.querySelectorAll('.layer-pill').forEach(p=>p.classList.remove('active'));
+    pill.classList.add('active');
+    document.getElementById('f-layer').value=layerName||'';
+    applyFilters();
+  });
+  return pill;
+}
+function populateFilters(){
+  const sel=(id,vals,labelMap)=>{
+    const el=document.getElementById(id);
+    el.innerHTML='<option value="">— Tutti —</option>';
+    [...vals].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=labelMap?(labelMap[v]||v):v;el.appendChild(o);});
+  };
+  sel('f-user',[...new Set(ALL_ROWS.map(r=>r.utente))].filter(Boolean));
+  sel('f-layer',[...new Set(ALL_ROWS.map(r=>r.layer))].filter(Boolean));
+  const mesiS=[...new Set(ALL_ROWS.map(r=>r.mese))].filter(Boolean).sort();
+  const mesiL={};mesiS.forEach(m=>mesiL[m]=MONTH_NAMES[m]||m);
+  sel('f-mese',mesiS,mesiL);
+  sel('f-anno',[...new Set(ALL_ROWS.map(r=>r.anno))].filter(Boolean));
+  sel('f-att',[...new Set(ALL_ROWS.map(r=>r.attivita))].filter(Boolean));
+}
+
+// ═══════════════════════════════════════════════════════
+// FILTRI
+//
+// Il filtro fascia oraria agisce sui SINGOLI PUNTI di ogni traccia.
+// Per ogni traccia che passa i filtri "base" (utente/layer/data/ecc.)
+// viene costruita una versione "tagliata" con solo i punti il cui
+// orario ricade nella fascia richiesta.
+// Produzione e lunghezza vengono ricalcolate su quei punti.
+// Se nessun punto della traccia ricade nella fascia, la traccia
+// viene esclusa del tutto.
+// ═══════════════════════════════════════════════════════
+function applyFilters(){
+  const search  =document.getElementById('f-search').value.toLowerCase().trim();
+  const user    =document.getElementById('f-user').value;
+  const mese    =document.getElementById('f-mese').value;
+  const att     =document.getElementById('f-att').value;
+  const anno    =document.getElementById('f-anno').value;
+  const layer   =document.getElementById('f-layer').value;
+  const dateFrom=document.getElementById('f-date-from').value;
+  const dateTo  =document.getElementById('f-date-to').value;
+  const oraFrom =document.getElementById('f-ora-from').value;
+  const oraTo   =document.getElementById('f-ora-to').value;
+  const hasOraFilter=!!(oraFrom||oraTo);
+
+  // ── 1. filtra le TRACCE base (tutto tranne fascia oraria) ──
+  const baseTracks=ALL_TRACKS.filter(t=>{
+    if(user    &&t.utente  !==user)   return false;
+    if(layer   &&t.layer   !==layer)  return false;
+    if(anno    &&t.anno    !==anno)   return false;
+    if(mese    &&t.mese    !==mese)   return false;
+    if(att     &&t.attivita!==att)    return false;
+    if(dateFrom&&t.data    <dateFrom) return false;
+    if(dateTo  &&t.data    >dateTo)   return false;
+    return true;
+  });
+
+  // ── 2. applica filtro orario a livello di singolo punto ──
+  // Produce tracce "virtuali" con punti ridotti e lunghezza ricalcolata
+  filteredTracks=[];
+  const filteredRowMap={}; // key → row aggiornata
+
+  for(const track of baseTracks){
+    // filtra i punti per fascia oraria
+    const pts=hasOraFilter
+      ? track.points.filter(p=>(!oraFrom||p.time>=oraFrom)&&(!oraTo||p.time<=oraTo))
+      : track.points;
+
+    if(!pts.length) continue; // traccia esclusa: nessun punto nella fascia
+
+    // orario effettivo = min/max degli orari dei punti filtrati
+    const times=pts.map(p=>p.time).sort();
+    const inizio=times[0], fine=times[times.length-1];
+
+    // ore ricalcolate
+    let ore=0;
+    try{
+      const[sh,sm]=inizio.split(':').map(Number);
+      const[eh,em]=fine  .split(':').map(Number);
+      ore=Math.max(0,Math.round(((eh*60+em)-(sh*60+sm))/60*100)/100);
+    }catch(e){}
+
+    // lunghezza ricalcolata sui soli punti filtrati (verrà aggiornata con ORS)
+    const lunghezza=Math.round(polylineLength(pts));
+
+    // crea traccia virtuale (non modifica l'originale)
+    const vtrack={
+      key:track.key,
+      layer:track.layer,utente:track.utente,data:track.data,attivita:track.attivita,
+      anno:track.anno,mese:track.mese,
+      inizio,fine,
+      points:pts,            // solo punti nella fascia
+      lunghezza,
+      routedCoords:null,     // forza nuovo routing sui punti ridotti
+      routeIsReal:false,
+      _oraFilter:hasOraFilter, // flag per sapere se è una traccia tagliata
+    };
+    filteredTracks.push(vtrack);
+
+    // row corrispondente aggiornata
+    filteredRowMap[track.key]={
+      layer:track.layer,
+      anno:track.anno,mese:track.mese,
+      meseN:MONTH_NAMES[track.mese]||track.mese||'',
+      giorno:track.data.split('-')[2]||'',
+      utente:track.utente,
+      inizio,fine,
+      prod:pts.length,       // produzione = punti nella fascia
+      ore,lunghezza,
+      attivita:track.attivita,
+      data:track.data,
+      trackKey:track.key,
+    };
+  }
+
+  // ── 3. costruisci filtered (array di row) dal filteredRowMap ──
+  filtered=Object.values(filteredRowMap);
+
+  // applica filtro testo libero
+  if(search){
+    filtered=filtered.filter(r=>{
+      const hay=[r.layer,r.anno,r.meseN,r.giorno,r.utente,r.inizio,r.fine,r.prod,r.ore,r.lunghezza,r.attivita,r.data].join(' ').toLowerCase();
+      return hay.includes(search);
+    });
+    // sincronizza filteredTracks
+    const fk=new Set(filtered.map(r=>r.trackKey));
+    filteredTracks=filteredTracks.filter(t=>fk.has(t.key));
+  }
+
+  if(sortCol) doSort();
+  render();
+  renderMapWithRouting();
+}
+
+function doSort(){
+  filtered.sort((a,b)=>{
+    let av=a[sortCol]??'',bv=b[sortCol]??'';
+    const an=parseFloat(String(av).replace(',','.')),bn=parseFloat(String(bv).replace(',','.'));
+    if(!isNaN(an)&&!isNaN(bn)){av=an;bv=bn;}else{av=String(av).toLowerCase();bv=String(bv).toLowerCase();}
+    if(av<bv)return sortAsc?-1:1;if(av>bv)return sortAsc?1:-1;return 0;
+  });
+}
+document.querySelectorAll('thead th[data-col]').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const col=th.dataset.col;
+    if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}
+    doSort();updateSortUi();render();
+  });
+});
+function updateSortUi(){
+  document.querySelectorAll('thead th[data-col]').forEach(th=>{
+    th.classList.remove('asc','desc');
+    if(th.dataset.col===sortCol)th.classList.add(sortAsc?'asc':'desc');
+    const si=th.querySelector('.si');
+    if(si)si.textContent=th.dataset.col===sortCol?(sortAsc?'▲':'▼'):'⇅';
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER TABLE + KPI
+// ═══════════════════════════════════════════════════════
+function render(){
+  // mappa key→lunghezza dalle tracce virtuali filtrate (già aggiornate con ORS se disponibile)
+  const trackLunMap={};
+  filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);
+
+  const totProd=filtered.reduce((s,r)=>s+r.prod,0);
+  const totOre =Math.round(filtered.reduce((s,r)=>s+r.ore,0)*100)/100;
+  const totLun =filtered.reduce((s,r)=>s+(trackLunMap[r.trackKey]||r.lunghezza),0);
+  const nUtenti=new Set(filtered.map(r=>r.utente)).size;
+
+  document.getElementById('kpi-rows').textContent  =fmt(filtered.length,0);
+  document.getElementById('kpi-prod').textContent  =fmt(totProd,0);
+  document.getElementById('kpi-ore').textContent   =fmt(totOre,2);
+  document.getElementById('kpi-lun').textContent   =totLun>=1000?fmt(Math.round(totLun/10)/100,2)+' km':fmt(Math.round(totLun),0)+' m';
+  document.getElementById('kpi-utenti').textContent=nUtenti;
+
+  const msg=`${filtered.length} di ${ALL_ROWS.length} record`;
+  document.getElementById('result-info').textContent=msg;
+  document.getElementById('footer-count').textContent=msg;
+
+  tblBody.innerHTML=filtered.length
+    ?filtered.map(r=>buildRow(r,trackLunMap[r.trackKey]||r.lunghezza)).join('')
+    :'<tr><td colspan="11" class="no-res">Nessun risultato con i filtri correnti.</td></tr>';
+
+  renderCharts();
+}
+
+function buildRow(r,lun){
+  const lunStr=lun>0?fmt(Math.round(lun),0)+' m':'—';
+  return `<tr>
+    <td><span class="tag-layer">${esc(r.layer)}</span></td>
+    <td>${esc(r.anno)}</td><td>${esc(r.meseN)}</td><td>${esc(r.giorno)}</td>
+    <td><span class="tag-user">${esc(r.utente)}</span></td>
+    <td>${esc(r.inizio)}</td><td>${esc(r.fine)}</td>
+    <td style="font-weight:700">${fmt(r.prod,0)}</td>
+    <td>${fmt(r.ore,2)}</td>
+    <td style="font-weight:600;color:#39d353">${lunStr}</td>
+    <td>${r.attivita?`<span class="tag-act">${esc(r.attivita)}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+  </tr>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════════════
+function aggr(data,kFn,vFn){const m={};data.forEach(r=>{const k=kFn(r)||'N/D';m[k]=(m[k]||0)+vFn(r);});return Object.entries(m).sort((a,b)=>b[1]-a[1]);}
+function renderBarList(id,entries,dec,cls){
+  const el=document.getElementById(id);
+  if(!entries.length){el.innerHTML='<div class="empty-chart">Nessun dato</div>';return;}
+  const max=entries[0][1]||1;
+  el.innerHTML=entries.slice(0,8).map(([k,v])=>{
+    const w=Math.max(3,(v/max)*100);
+    return `<div class="bar-item"><div class="bar-label" title="${esc(k)}">${esc(k)}</div><div class="bar-track"><div class="bar-fill ${cls}" style="width:${w}%"></div></div><div class="bar-val">${fmt(v,dec)}</div></div>`;
+  }).join('');
+}
+function renderCharts(){
+  renderBarList('chart-user', aggr(filtered,r=>r.utente,  r=>r.prod),0,'c0');
+  renderBarList('chart-mese', aggr(filtered,r=>r.meseN,   r=>r.ore), 2,'c1');
+  renderBarList('chart-layer',aggr(filtered,r=>r.layer,   r=>r.prod),0,'c3');
+  renderBarList('chart-att',  aggr(filtered,r=>r.attivita,r=>r.prod),0,'c2');
+}
+
+// ═══════════════════════════════════════════════════════
+// MAPPA
+// ═══════════════════════════════════════════════════════
+function initMap(){
+  if(leafletMap)return;
+  leafletMap=L.map('map-container',{zoomControl:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19
+  }).addTo(leafletMap);
+  setTimeout(()=>leafletMap.invalidateSize(),200);
+}
+
+function setMapView(v){
+  mapView=v;
+  document.getElementById('btn-view-day').classList.toggle('active',v==='day');
+  document.getElementById('btn-view-layer').classList.toggle('active',v==='layer');
+  renderMapWithRouting();
+}
+
+function fitMap(){
+  if(!leafletMap||!mapLayers.length)return;
+  const bounds=L.latLngBounds([]);
+  mapLayers.forEach(l=>{try{bounds.extend(l.getBounds());}catch(e){try{bounds.extend(l.getLatLng());}catch(e2){}}});
+  if(bounds.isValid())leafletMap.fitBounds(bounds,{padding:[28,28]});
+}
+
+function colorForKey(key,palette){
+  let h=0;for(let i=0;i<key.length;i++)h=(h*31+key.charCodeAt(i))>>>0;
+  return palette[h%palette.length];
+}
+function buildLayerColorMap(){
+  const m={};
+  [...new Set(ALL_ROWS.map(r=>r.layer))].sort().forEach((lyr,i)=>{m[lyr]=LAYER_COLORS[i%LAYER_COLORS.length];});
+  return m;
+}
+
+// Wrapper asincrono: calcola routing ORS per le tracce filtrate, poi disegna
+async function renderMapWithRouting(){
+  if(!leafletMap)return;
+
+  // tracce con ≥2 punti che non hanno ancora un routing calcolato
+  // per i punti correnti (il cacheKey è basato sui punti effettivi)
+  const toRoute=filteredTracks.filter(t=>{
+    if(t.points.length<2) return false;
+    const ck=t.points.map(p=>`${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join('|');
+    if(routeCache.has(ck)){
+      // già in cache: applica subito
+      const cached=routeCache.get(ck);
+      t.routedCoords=cached.coords;
+      t.lunghezza   =cached.distance;
+      t.routeIsReal =cached.isReal;
+      return false;
+    }
+    return true;
+  });
+
+  if(toRoute.length>0){
+    routingOverlay.classList.add('show');
+    let done=0;
+    for(const track of toRoute){
+      routingLabel.textContent=`Calcolo percorso su strada… (${done+1}/${toRoute.length})`;
+      routingSub.textContent=`${track.utente} — ${track.data}`;
+      const result=await routeTrack(track);
+      if(result){
+        track.routedCoords=result.coords;
+        track.lunghezza   =result.distance;
+        track.routeIsReal =result.isReal;
+      }
+      done++;
+    }
+    routingOverlay.classList.remove('show');
+    // aggiorna tabella/kpi con le nuove lunghezze
+    render();
+  }
+
+  drawMap();
+}
+
+function drawMap(){
+  mapLayers.forEach(l=>leafletMap.removeLayer(l));mapLayers=[];
+  if(!filteredTracks.length){
+    document.getElementById('map-legend').innerHTML='<span style="color:var(--muted);font-size:12px">Nessun dato da visualizzare con i filtri correnti.</span>';
+    return;
+  }
+
+  const layerColorMap=buildLayerColorMap();
+  const legendItems={};
+  let nRouted=0,nFallback=0;
+
+  filteredTracks.forEach(track=>{
+    if(!track.points.length)return;
+    const color=mapView==='day'?colorForKey(track.data,DAY_PALETTE):layerColorMap[track.layer]||'#58a6ff';
+    const lun=track.lunghezza>0?fmt(Math.round(track.lunghezza),0)+' m':'N/D';
+
+    // usa routedCoords se disponibile, altrimenti linea retta tra i punti
+    const lineCoords=track.routedCoords||track.points.map(p=>[p.lat,p.lng]);
+    const isReal=track.routeIsReal===true;
+    if(isReal)nRouted++;else if(track.points.length>=2)nFallback++;
+
+    if(lineCoords.length>=2){
+      const poly=L.polyline(lineCoords,{
+        color,weight:isReal?3.5:2.5,
+        opacity:isReal?.9:.65,
+        dashArray:isReal?null:'6,5',  // tratteggiato = fallback linea retta
+      });
+      poly.bindPopup(buildPopupLine(track,lun,color,isReal));
+      poly.addTo(leafletMap);mapLayers.push(poly);
+    }
+
+    // marker sui punti rilevati originali (non sui punti interpolati dal routing)
+    track.points.forEach((p,idx)=>{
+      const isFirst=idx===0,isLast=idx===track.points.length-1;
+      const isEnd=isFirst||isLast;
+      const marker=L.circleMarker([p.lat,p.lng],{
+        radius:isEnd?7:4,color,fillColor:color,fillOpacity:isEnd?1:.55,weight:isEnd?2:1,
+      });
+      marker.bindPopup(buildPopupPoint(track,p,idx,color,lun));
+      marker.addTo(leafletMap);mapLayers.push(marker);
+    });
+
+    if(mapView==='day') legendItems[track.data]=color;
+    else legendItems[track.layer]=color;
+  });
+
+  // legenda
+  const entries=Object.entries(legendItems).sort((a,b)=>a[0].localeCompare(b[0]));
+  const labelKey=mapView==='day'?'GIORNI':'LAYER';
+  let legendHtml=(entries.length?`<span style="font-size:11px;color:var(--muted);margin-right:6px;font-weight:700">${labelKey}:</span>`:'')+
+    entries.map(([k,c])=>
+      mapView==='day'
+        ?`<span class="legend-item"><span class="legend-dot" style="background:${c}"></span>${esc(k)}</span>`
+        :`<span class="legend-item"><span class="legend-line" style="background:${c}"></span>${esc(k)}</span>`
+    ).join('');
+  // indicatore routing
+  if(nRouted>0||nFallback>0){
+    legendHtml+=`<span style="margin-left:auto;display:flex;gap:8px;align-items:center">`;
+    if(nRouted>0)   legendHtml+=`<span class="legend-item"><span class="legend-line" style="background:var(--blue)"></span><span style="color:var(--blue)">Percorso reale (${nRouted})</span></span>`;
+    if(nFallback>0) legendHtml+=`<span class="legend-item"><span class="legend-dashed" style="color:var(--orange)"></span><span style="color:var(--orange)">Linea retta (${nFallback})</span></span>`;
+    legendHtml+=`</span>`;
+  }
+  document.getElementById('map-legend').innerHTML=legendHtml;
+}
+
+function buildPopupLine(track,lun,color,isReal){
+  const routeType=isReal
+    ?`<span class="route-badge routed">🛣 percorso reale</span>`
+    :`<span class="route-badge fallback">↗ linea retta</span>`;
+  return `<div class="popup-title" style="color:${color}">📍 Percorso — ${esc(track.data)} ${routeType}</div>
+    <div class="popup-row"><span class="pk">Operatore</span><span class="pv purple">${esc(track.utente)}</span></div>
+    <div class="popup-row"><span class="pk">Layer</span><span class="pv blue">${esc(track.layer)}</span></div>
+    <div class="popup-row"><span class="pk">Orario</span><span class="pv">${esc(track.inizio)} → ${esc(track.fine)}</span></div>
+    <hr class="popup-divider">
+    <div class="popup-row"><span class="pk">Punti rilevati</span><span class="pv">${track.points.length}</span></div>
+    <div class="popup-row"><span class="pk">Lunghezza tratto</span><span class="pv green">${lun}</span></div>
+    ${track.attivita?`<div class="popup-row"><span class="pk">Attività</span><span class="pv">${esc(track.attivita)}</span></div>`:''}`;
+}
+
+function buildPopupPoint(track,p,idx,color,lun){
+  const pos=idx===0?'🟢 Inizio':idx===track.points.length-1?'🔴 Fine':`Punto ${idx+1}`;
+  return `<div class="popup-title" style="color:${color}">${pos}</div>
+    <div class="popup-row"><span class="pk">Operatore</span><span class="pv purple">${esc(track.utente)}</span></div>
+    <div class="popup-row"><span class="pk">Data</span><span class="pv">${esc(track.data)}</span></div>
+    <div class="popup-row"><span class="pk">Ora</span><span class="pv">${esc(p.time)}</span></div>
+    <div class="popup-row"><span class="pk">Lunghezza percorso</span><span class="pv green">${lun}</span></div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// CSV EXPORT
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-export-csv').addEventListener('click',()=>{
+  const trackLunMap={};filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);
+  const headers=['Layer','Anno','Mese','Giorno','Operatore','Inizio','Fine','Produzione (punti)','Ore','Lunghezza (m)','Attivita'];
+  const lines=[headers,...filtered.map(r=>[r.layer,r.anno,r.meseN,r.giorno,r.utente,r.inizio,r.fine,r.prod,r.ore,Math.round(trackLunMap[r.trackKey]||r.lunghezza),r.attivita])]
+    .map(cols=>cols.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
+  const blob=new Blob(['\uFEFF'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`report_produzione_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
+});
+
+// ═══════════════════════════════════════════════════════
+// EVENTI FILTRI
+// ═══════════════════════════════════════════════════════
+['f-search','f-user','f-layer','f-mese','f-att','f-anno','f-date-from','f-date-to','f-ora-from','f-ora-to'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>{
+    if(id==='f-layer'){
+      const val=el.value;
+      document.querySelectorAll('.layer-pill').forEach(p=>{
+        p.classList.toggle('active',p.dataset.layer===val||(!val&&p.dataset.layer===''));
+      });
+    }
+    applyFilters();
+  });
+});
+document.getElementById('btn-applica').addEventListener('click',applyFilters);
+document.getElementById('btn-reset').addEventListener('click',()=>{
+  ['f-search','f-user','f-layer','f-mese','f-att','f-anno','f-date-from','f-date-to','f-ora-from','f-ora-to'].forEach(id=>document.getElementById(id).value='');
+  sortCol=null;sortAsc=true;updateSortUi();
+  document.querySelectorAll('.layer-pill').forEach((p,i)=>p.classList.toggle('active',i===0));
+  applyFilters();
+});
+
+// ═══════════════════════════════════════════════════════
+// UTILITY
+// ═══════════════════════════════════════════════════════
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmt(n,dec){return Number(n).toLocaleString('it-IT',{minimumFractionDigits:dec,maximumFractionDigits:dec});}
+function setProgress(pct,label){progressBar.style.width=pct+'%';progressLabel.textContent=label;}
+function showProgress(show){progressWrap.style.display=show?'block':'none';}
+function clearAlerts(){alertsEl.innerHTML='';}
+function addAlert(type,msg){
+  const cls=type==='error'?'alert-err':type==='warn'?'alert-warn':'alert-ok';
+  const div=document.createElement('div');div.className=`alert ${cls}`;div.innerHTML=msg;alertsEl.appendChild(div);
+}
+
+// ═══════════════════════════════════════════════════════
+// EXPORT BAR
+// ═══════════════════════════════════════════════════════
+
+// Mostra la barra dopo il caricamento dei dati
+function showExportBar(){
+  document.getElementById('export-bar').classList.remove('hidden-bar');
+  // aggiorna la nota in base al supporto File System Access API
+  const hasFS=!!(window.showSaveFilePicker);
+  document.getElementById('export-bar-note').textContent=hasFS
+    ? 'Scegli nome e percorso nella finestra di dialogo'
+    : 'Il file verrà scaricato nella cartella Download del browser';
+}
+
+// Salvataggio generico: usa File System Access API se disponibile, altrimenti download
+async function saveFile(content, suggestedName, mimeType, description, extensions){
+  const blob=new Blob([content],{type:mimeType});
+  if(window.showSaveFilePicker){
+    try{
+      const handle=await window.showSaveFilePicker({
+        suggestedName,
+        types:[{description, accept:{[mimeType]:extensions}}],
+      });
+      const writable=await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return; // successo
+    }catch(e){
+      if(e.name==='AbortError') return; // utente ha annullato
+      // altri errori: cade nel fallback
+    }
+  }
+  // fallback: download classico
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=suggestedName;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Costruisce il CSV dei dati filtrati ─────────────
+function buildCSVContent(){
+  const trackLunMap={};filteredTracks.forEach(t=>trackLunMap[t.key]=t.lunghezza);
+  const headers=['Layer','Anno','Mese','Giorno','Operatore','Inizio','Fine','Produzione (punti)','Ore','Lunghezza (m)','Attivita'];
+  const lines=[headers,...filtered.map(r=>[
+    r.layer,r.anno,r.meseN,r.giorno,r.utente,
+    r.inizio,r.fine,r.prod,r.ore,
+    Math.round(trackLunMap[r.trackKey]||r.lunghezza),
+    r.attivita
+  ])].map(cols=>cols.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));
+  return '\uFEFF'+lines.join('\n');
+}
+
+// ── Export HTML: usa __SOURCE__ embedded nel file ──────
+// __SOURCE__ è il template del file esportato con un placeholder
+// per i dati. buildHTMLContent lo riempie e lo restituisce.
+// Nessuna fetch, nessun DOM parsing — funziona ovunque.
+function buildHTMLContent(){
+  const rowsJSON   = JSON.stringify(ALL_ROWS.map(r=>({
+    layer:r.layer, anno:r.anno, mese:r.mese, meseN:r.meseN,
+    giorno:r.giorno, utente:r.utente,
+    inizio:r.inizio, fine:r.fine,
+    prod:r.prod, ore:r.ore, lunghezza:r.lunghezza,
+    attivita:r.attivita, data:r.data, trackKey:r.trackKey,
+  })));
+  const tracksJSON = JSON.stringify(ALL_TRACKS.map(t=>({
+    key:t.key, layer:t.layer, utente:t.utente, data:t.data,
+    attivita:t.attivita, anno:t.anno, mese:t.mese,
+    inizio:t.inizio, fine:t.fine,
+    points:t.points, lunghezza:t.lunghezza,
+    routedCoords: t.routedCoords || null,
+    routeIsReal:  t.routeIsReal  || false,
+  })));
+  const generated = new Date().toLocaleString('it-IT');
+  const dataBlock =
+    'const __EMBEDDED_ROWS__   = ' + rowsJSON + ';\n' +
+    'const __EMBEDDED_TRACKS__ = ' + tracksJSON + ';\n' +
+    '// generato il ' + generated;
+  return __SOURCE__.replace("/*__DATA_PLACEHOLDER__*/", dataBlock);
+}
+
+// ── Pulsante Salva HTML ──────────────────────────────
+document.getElementById('btn-save-html').addEventListener('click', async ()=>{
+  if(!ALL_ROWS.length){addAlert('warn','Carica prima uno ZIP con dati.');return;}
+  const btn=document.getElementById('btn-save-html');
+  btn.innerHTML='⏳ Preparazione…'; btn.disabled=true;
+  try{
+    const dateStr=new Date().toISOString().slice(0,10);
+    const suggestedName=`report_produzione_${dateStr}.html`;
+    const content=buildHTMLContent();
+    if(!content) return;
+    await saveFile(content, suggestedName, 'text/html', 'File HTML', ['.html']);
+  }catch(e){
+    addAlert('error','Errore export HTML: '+e.message);
+  }finally{
+    btn.innerHTML='<span>🌐</span> Salva HTML'; btn.disabled=false;
+  }
+});
+
+// ── Pulsante Salva CSV ───────────────────────────────
+document.getElementById('btn-save-csv').addEventListener('click', async ()=>{
+  if(!ALL_ROWS.length){addAlert('warn','Carica prima uno ZIP con dati.');return;}
+  const dateStr=new Date().toISOString().slice(0,10);
+  const suggestedName=`report_produzione_${dateStr}.csv`;
+  const content=buildCSVContent();
+  await saveFile(content, suggestedName, 'text/csv;charset=utf-8', 'File CSV', ['.csv']);
+});
+
+</script>
+</body>
+</html>

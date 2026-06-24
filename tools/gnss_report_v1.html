@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GNSS — Report Giornaliero v.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&family=Nunito:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#080a0f; --surface:#0f1219; --card:#131720;
+    --border:#1c2235; --border2:#242d42;
+    --text:#e8edf5; --muted:#5a6680; --muted2:#8899bb;
+    --green:#00d4a0; --green2:#00ffbf;
+    --amber:#ffb340; --red:#ff4d6a; --blue:#4d8fff; --r:10px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+  /* ── UPLOAD ── */
+  #upload-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;position:relative;overflow:hidden;}
+  #upload-screen::before{content:'';position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:.35;pointer-events:none;}
+  #upload-screen::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);width:600px;height:600px;background:radial-gradient(circle,rgba(0,212,160,.12) 0%,transparent 65%);pointer-events:none;}
+  .upload-logo{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--green);margin-bottom:8px;position:relative;z-index:1;}
+  .upload-title{font-family:'Syne',sans-serif;font-size:clamp(28px,5vw,52px);font-weight:800;line-height:1.1;text-align:center;color:var(--text);margin-bottom:16px;position:relative;z-index:1;}
+  .upload-title span{color:var(--green);}
+  .upload-sub{font-size:15px;color:var(--muted2);text-align:center;margin-bottom:48px;max-width:480px;line-height:1.6;position:relative;z-index:1;}
+  .drop-zone{position:relative;z-index:1;width:100%;max-width:520px;border:2px dashed var(--border2);border-radius:20px;padding:48px 32px;text-align:center;cursor:pointer;transition:all .25s;background:rgba(15,18,25,.7);backdrop-filter:blur(8px);}
+  .drop-zone:hover,.drop-zone.drag-over{border-color:var(--green);background:rgba(0,212,160,.05);box-shadow:0 0 40px rgba(0,212,160,.15);}
+  .drop-icon{font-size:48px;margin-bottom:16px;display:block;}
+  .drop-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;}
+  .drop-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
+  .drop-btn{display:inline-flex;align-items:center;gap:8px;background:var(--green);color:#000;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;padding:12px 28px;border-radius:50px;border:none;cursor:pointer;transition:all .2s;}
+  .drop-btn:hover{background:var(--green2);transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,212,160,.35);}
+  .file-list{position:relative;z-index:1;margin-top:24px;width:100%;max-width:520px;}
+  .file-item{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-size:13px;animation:slideIn .2s ease;}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .file-item .fi-icon{font-size:18px;}.file-item .fi-name{flex:1;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .file-item .fi-size{color:var(--muted);font-size:11px;font-family:'JetBrains Mono',monospace;}
+  .file-item .fi-ok{color:var(--green);font-size:14px;}.file-item .fi-err{color:var(--red);font-size:11px;}
+  .generate-btn{position:relative;z-index:1;margin-top:28px;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,#00d4a0,#00a87c);color:#000;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;letter-spacing:1.5px;padding:16px 48px;border-radius:50px;border:none;cursor:pointer;transition:all .25s;box-shadow:0 4px 32px rgba(0,212,160,.3);}
+  .generate-btn:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,212,160,.45);}
+  .generate-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+
+  /* ── REPORT ── */
+  #report-screen{display:none;min-height:100vh;}
+  .rpt-header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+  .rpt-logo{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:3px;color:var(--green);}
+  .rpt-meta{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+  .header-actions{display:flex;gap:10px;align-items:center;}
+  .back-btn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--border2);border-radius:8px;padding:6px 14px;color:var(--muted2);font-size:12px;cursor:pointer;font-family:'Nunito',sans-serif;transition:all .2s;}
+  .back-btn:hover{border-color:var(--green);color:var(--green);}
+  .pdf-btn{display:flex;align-items:center;gap:6px;background:var(--green);border:none;border-radius:8px;padding:7px 16px;color:#000;font-size:12px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;letter-spacing:.5px;transition:all .2s;}
+  .pdf-btn:hover{background:var(--green2);transform:translateY(-1px);}
+  .pdf-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+  .rpt-body{padding:32px;max-width:1400px;margin:0 auto;}
+
+  /* KPI */
+  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:32px;}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;position:relative;overflow:hidden;transition:border-color .2s;}
+  .kpi:hover{border-color:var(--border2);}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kpi-color,var(--green));}
+  .kpi-label{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+  .kpi-value{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--text);line-height:1;}
+  .kpi-unit{font-size:13px;color:var(--muted);margin-left:4px;}
+  .kpi-sub{font-size:11px;color:var(--muted);margin-top:6px;}
+
+  /* SECTION */
+  .section{margin-bottom:32px;}
+  .section-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+  .section-hdr h2{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);}
+  .section-hdr::after{content:'';flex:1;height:1px;background:var(--border);}
+
+  /* MAP */
+  #rpt-map{width:100%;height:380px;border-radius:var(--r);border:1px solid var(--border);overflow:hidden;}
+
+  /* DAY CARDS */
+  .day-grid{display:flex;flex-direction:column;gap:16px;}
+  .day-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+  .day-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+  .day-date{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--text);}
+  .day-badges{display:flex;gap:8px;flex-wrap:wrap;}
+  .badge{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.05);border:1px solid var(--border2);color:var(--muted2);}
+  .badge.green{background:rgba(0,212,160,.1);border-color:rgba(0,212,160,.3);color:var(--green);}
+  .badge.amber{background:rgba(255,179,64,.1);border-color:rgba(255,179,64,.3);color:var(--amber);}
+  .badge.red{background:rgba(255,77,106,.1);border-color:rgba(255,77,106,.3);color:var(--red);}
+  .day-body{padding:20px;}
+
+  /* GANTT */
+  .gantt-wrap{position:relative;margin-bottom:20px;}
+  .gantt-axis{display:flex;margin-left:100px;margin-bottom:6px;position:relative;height:14px;}
+  .gantt-tick-lbl{position:absolute;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);transform:translateX(-50%);}
+  .gantt-rows{display:flex;flex-direction:column;gap:5px;}
+  .gantt-row{display:flex;align-items:center;}
+  .gantt-lbl{width:100px;flex-shrink:0;font-size:11px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px;}
+  .gantt-track{flex:1;height:22px;background:rgba(255,255,255,.04);border-radius:4px;position:relative;border:1px solid var(--border);}
+  .gantt-bar{position:absolute;top:2px;bottom:2px;border-radius:3px;cursor:default;transition:filter .2s;}
+  .gantt-bar:hover{filter:brightness(1.25);}
+  .gantt-bar-label{position:absolute;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;font-size:9px;color:rgba(0,0,0,.7);white-space:nowrap;pointer-events:none;left:6px;font-weight:600;}
+  /* session distance tag */
+  .gantt-dist{margin-left:8px;flex-shrink:0;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--green);min-width:60px;}
+
+  /* STATS GRID */
+  .day-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:16px;}
+  .ds{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+  .ds-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:4px;}
+  .ds-val{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--text);}
+  .ds-unit{font-size:11px;color:var(--muted);}
+
+  /* QUALITY BAR */
+  .quality-bar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin:6px 0 2px;gap:2px;}
+  .qb-seg{flex:1;border-radius:2px;}
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+  /* LOADING */
+  #loading-overlay{display:none;position:fixed;inset:0;z-index:999;background:rgba(8,10,15,.9);align-items:center;justify-content:center;flex-direction:column;gap:16px;}
+  #loading-overlay.show{display:flex;}
+  .spin{width:40px;height:40px;border:3px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .load-txt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted2);letter-spacing:2px;}
+
+  /* LEAFLET */
+  .leaflet-popup-content-wrapper{background:var(--card);border:1px solid var(--border2);border-radius:8px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,.5);}
+  .leaflet-popup-tip{background:var(--card);}
+  .lp-name{font-family:'Syne',sans-serif;font-weight:700;color:var(--green);margin-bottom:6px;font-size:13px;}
+  .lp-row{font-size:11px;color:var(--muted2);margin:2px 0;}.lp-row b{color:var(--text);}
+  input[type="file"]{display:none;}
+
+  /* VERSION TAG */
+  .ver-tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:2px 7px;margin-left:10px;}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay"><div class="spin"></div><div class="load-txt">ELABORAZIONE IN CORSO...</div></div>
+
+<!-- UPLOAD SCREEN -->
+<div id="upload-screen">
+  <div class="upload-logo">⬡ GNSS Monitor</div>
+  <h1 class="upload-title">Report <span>Giornaliero</span><br>Lavorazioni GNSS</h1>
+  <p class="upload-sub">Carica uno o più file CSV o Excel con dati GNSS. Il sistema li aggregherà automaticamente per giorno e genererà un report unificato.</p>
+  <div class="drop-zone" id="drop-zone">
+    <span class="drop-icon">📡</span>
+    <div class="drop-title">Trascina i file qui</div>
+    <div class="drop-sub">oppure clicca per selezionarli dal tuo dispositivo</div>
+    <button class="drop-btn" onclick="document.getElementById('file-input').click()">📂 Seleziona File</button>
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls" multiple>
+  </div>
+  <div class="file-list" id="file-list"></div>
+  <button class="generate-btn" id="generate-btn" disabled onclick="generateReport()">⚡ GENERA REPORT</button>
+</div>
+
+<!-- REPORT SCREEN -->
+<div id="report-screen">
+  <div class="rpt-header">
+    <div style="display:flex;align-items:center;">
+      <div class="rpt-logo">⬡ GNSS REPORT</div>
+      <span class="ver-tag">v.1</span>
+    </div>
+    <div class="rpt-meta" id="rpt-generated"></div>
+    <div class="header-actions">
+      <button class="pdf-btn" id="pdf-btn" onclick="exportPDF()">⬇ Esporta PDF</button>
+      <button class="back-btn" onclick="backToUpload()">← Nuovo Report</button>
+    </div>
+  </div>
+  <div class="rpt-body" id="rpt-body"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════
+// Haversine formula — distanza tra due punti lat/lon in metri
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+            Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Calcola distanza totale percorsa in una sequenza di punti
+function calcDistanceMeters(rows) {
+  let total = 0;
+  for (let i = 1; i < rows.length; i++) {
+    total += haversine(rows[i-1].latitude, rows[i-1].longitude,
+                       rows[i].latitude,   rows[i].longitude);
+  }
+  return total;
+}
+
+function fmtDist(m) {
+  if (m >= 1000) return (m/1000).toFixed(2) + ' km';
+  return Math.round(m) + ' m';
+}
+
+function toItalyDate(ts) {
+  return new Date(ts*1000).toLocaleDateString('sv', {timeZone:'Europe/Rome'});
+}
+function toItalyTime(ts) {
+  return new Date(ts*1000).toLocaleTimeString('it-IT', {timeZone:'Europe/Rome', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+function toItalyDateLabel(dateStr) {
+  const [y,m,d] = dateStr.split('-');
+  const names=['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+  const dow=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+  const dt = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  return `${dow[dt.getDay()]} ${parseInt(d)} ${names[parseInt(m)]} ${y}`;
+}
+
+// ═══════════════════════════════════════════════════
+// FILE PARSING
+// ═══════════════════════════════════════════════════
+let pendingFiles = [];
+let rptMap = null;
+let reportByDay = null;
+let reportAllRows = null;
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave', ()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e=>{e.preventDefault();dz.classList.remove('drag-over');handleFiles(Array.from(e.dataTransfer.files));});
+document.getElementById('file-input').addEventListener('change', e=>{handleFiles(Array.from(e.target.files));e.target.value='';});
+
+function handleFiles(files) {
+  files.forEach(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['csv','xlsx','xls'].includes(ext)) { addFileItem(f.name,0,false,'Formato non supportato'); return; }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const rows = ext==='csv' ? parseCSV(ev.target.result) : parseExcel(ev.target.result);
+        if (!rows||!rows.length) throw new Error('Nessun dato valido');
+        pendingFiles.push({name:f.name, rows});
+        addFileItem(f.name, f.size, true, `${rows.length.toLocaleString()} punti GPS`);
+        document.getElementById('generate-btn').disabled = false;
+      } catch(err) { addFileItem(f.name,f.size,false,err.message); }
+    };
+    if (ext==='csv') reader.readAsText(f); else reader.readAsArrayBuffer(f);
+  });
+}
+
+function parseCSV(text) {
+  const rows = [];
+  for (const line of text.trim().split('\n')) {
+    const v = line.trim().split(',');
+    if (v.length < 5) continue;
+    const ts = parseFloat(v[0]);
+    if (isNaN(ts)||ts<1e9||ts>2e10) continue;
+    const lat=parseFloat(v[2]), lon=parseFloat(v[3]), alt=parseFloat(v[4]);
+    if (isNaN(lat)||isNaN(lon)) continue;
+    rows.push({timestamp:ts, latitude:lat, longitude:lon, altitude:isNaN(alt)?0:alt,
+               hdop:parseFloat(v[8])||0, satellite_num:parseFloat(v[13])||0});
+  }
+  return rows;
+}
+
+function parseExcel(buffer) {
+  const wb = XLSX.read(buffer,{type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const data = XLSX.utils.sheet_to_json(ws,{header:1});
+  const rows = [];
+  let startIdx = (data.length && data[0] && isNaN(parseFloat(data[0][0]))) ? 1 : 0;
+  for (let i=startIdx;i<data.length;i++) {
+    const v=data[i]; if(!v||v.length<4) continue;
+    const ts=parseFloat(v[0]);
+    if(isNaN(ts)||ts<1e9||ts>2e10) continue;
+    const lat=parseFloat(v[2]), lon=parseFloat(v[3]), alt=parseFloat(v[4]);
+    if(isNaN(lat)||isNaN(lon)) continue;
+    rows.push({timestamp:ts, latitude:lat, longitude:lon, altitude:isNaN(alt)?0:alt,
+               hdop:parseFloat(v[8])||0, satellite_num:parseFloat(v[13])||0});
+  }
+  return rows;
+}
+
+function addFileItem(name, size, ok, note) {
+  const fl = document.getElementById('file-list');
+  const el = document.createElement('div'); el.className='file-item';
+  const sizeStr = size>0?(size>1048576?(size/1048576).toFixed(1)+'MB':(size/1024).toFixed(0)+'KB'):'';
+  el.innerHTML=`<span class="fi-icon">${ok?'📄':'⚠️'}</span><span class="fi-name">${name}</span><span class="fi-size">${sizeStr}</span><span class="${ok?'fi-ok':'fi-err'}">${ok?'✓ '+note:note}</span>`;
+  fl.appendChild(el);
+}
+
+// ═══════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════
+function groupByDay(rows) {
+  const days = {};
+  for (const r of rows) {
+    const d = toItalyDate(r.timestamp);
+    if (!days[d]) days[d]=[];
+    days[d].push(r);
+  }
+  return days;
+}
+
+function dayStats(rows) {
+  const n=rows.length, startTs=rows[0].timestamp, endTs=rows[n-1].timestamp;
+  const durationSec=endTs-startTs;
+  const altAvg=rows.reduce((a,r)=>a+r.altitude,0)/n;
+  const altMin=Math.min(...rows.map(r=>r.altitude));
+  const altMax=Math.max(...rows.map(r=>r.altitude));
+  const satAvg=rows.reduce((a,r)=>a+r.satellite_num,0)/n;
+  const hdopAvg=rows.reduce((a,r)=>a+r.hdop,0)/n;
+  let hdopExc=0,hdopGood=0,hdopFair=0,hdopPoor=0;
+  for(const r of rows){if(r.hdop<=1)hdopExc++;else if(r.hdop<=2)hdopGood++;else if(r.hdop<=5)hdopFair++;else hdopPoor++;}
+  const distMeters = calcDistanceMeters(rows);
+  return {n,startTs,endTs,durationSec,altAvg,altMin,altMax,satAvg,hdopAvg,
+          hdopExc,hdopGood,hdopFair,hdopPoor,
+          hdopPct:{exc:hdopExc/n,good:hdopGood/n,fair:hdopFair/n,poor:hdopPoor/n},
+          distMeters};
+}
+
+function detectSessions(rows, gapSec=300) {
+  const sessions=[]; let start=0;
+  for(let i=1;i<rows.length;i++){
+    if(rows[i].timestamp-rows[i-1].timestamp>gapSec){sessions.push(rows.slice(start,i));start=i;}
+  }
+  sessions.push(rows.slice(start));
+  return sessions.filter(s=>s.length>1);
+}
+
+function hdopBadgeClass(h){return h<=2?'green':h<=5?'amber':'red';}
+function hdopLabel(h){return h<=1?'Ottimo':h<=2?'Buono':h<=5?'Discreto':'Scarso';}
+
+// ═══════════════════════════════════════════════════
+// GENERATE REPORT
+// ═══════════════════════════════════════════════════
+function generateReport() {
+  if (!pendingFiles.length) return;
+  document.getElementById('loading-overlay').classList.add('show');
+  setTimeout(() => {
+    try {
+      let allRows = [];
+      pendingFiles.forEach(f => allRows = allRows.concat(f.rows));
+      allRows.sort((a,b)=>a.timestamp-b.timestamp);
+      const byDay = groupByDay(allRows);
+      reportByDay = byDay;
+      reportAllRows = allRows;
+      buildReport(byDay, allRows);
+      document.getElementById('upload-screen').style.display='none';
+      document.getElementById('report-screen').style.display='block';
+    } catch(e) { alert('Errore: '+e.message); }
+    finally { document.getElementById('loading-overlay').classList.remove('show'); }
+  }, 50);
+}
+
+// ═══════════════════════════════════════════════════
+// BUILD HTML
+// ═══════════════════════════════════════════════════
+function buildReport(byDay, allRows) {
+  const dayKeys = Object.keys(byDay).sort();
+  const totalRows = allRows.length;
+  const totalDurationSec = dayKeys.reduce((a,dk)=>a+dayStats(byDay[dk]).durationSec,0);
+  const globalHdop = allRows.reduce((a,r)=>a+r.hdop,0)/allRows.length;
+  const globalSat  = allRows.reduce((a,r)=>a+r.satellite_num,0)/allRows.length;
+  const totalDist  = dayKeys.reduce((a,dk)=>a+dayStats(byDay[dk]).distMeters,0);
+
+  const now = new Date().toLocaleString('it-IT',{timeZone:'Europe/Rome',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('rpt-generated').textContent=`Generato il ${now} — Ora Italia (UTC+2)`;
+
+  let html='';
+
+  // KPI
+  const totalHours=(totalDurationSec/3600).toFixed(1);
+  const totalKpts=(totalRows/1000).toFixed(1);
+  html+=`<div class="kpi-strip">
+    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Giorni rilevati</div><div class="kpi-value">${dayKeys.length}</div><div class="kpi-sub">${dayKeys[0]} → ${dayKeys[dayKeys.length-1]}</div></div>
+    <div class="kpi" style="--kpi-color:var(--blue)"><div class="kpi-label">Ore lavorate</div><div class="kpi-value">${totalHours}<span class="kpi-unit">h</span></div><div class="kpi-sub">tempo totale attivo</div></div>
+    <div class="kpi" style="--kpi-color:var(--amber)"><div class="kpi-label">Punti GPS</div><div class="kpi-value">${totalKpts}<span class="kpi-unit">k</span></div><div class="kpi-sub">${totalRows.toLocaleString()} campioni</div></div>
+    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Distanza totale</div><div class="kpi-value" style="font-size:22px">${fmtDist(totalDist)}</div><div class="kpi-sub">somma tutti i giorni</div></div>
+    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Satelliti medi</div><div class="kpi-value">${globalSat.toFixed(1)}</div><div class="kpi-sub">media globale</div></div>
+    <div class="kpi" style="--kpi-color:${globalHdop<=2?'var(--green)':globalHdop<=5?'var(--amber)':'var(--red)'}"><div class="kpi-label">HDOP medio</div><div class="kpi-value">${globalHdop.toFixed(2)}</div><div class="kpi-sub">${hdopLabel(globalHdop)}</div></div>
+    <div class="kpi" style="--kpi-color:var(--amber)"><div class="kpi-label">File caricati</div><div class="kpi-value">${pendingFiles.length}</div><div class="kpi-sub">sorgenti fuse</div></div>
+  </div>`;
+
+  // MAP
+  html+=`<div class="section"><div class="section-hdr"><h2>📍 Mappa Tracciati</h2></div><div id="rpt-map"></div></div>`;
+
+  // DAY CARDS
+  html+=`<div class="section"><div class="section-hdr"><h2>📅 Dettaglio per Giorno</h2></div><div class="day-grid">`;
+
+  const SESSION_COLORS=['#00d4a0','#4d8fff','#ffb340','#ff6b8a','#a78bfa','#34d399'];
+
+  for (const dk of dayKeys) {
+    const rows=byDay[dk];
+    const s=dayStats(rows);
+    const sessions=detectSessions(rows);
+    const durationHours=(s.durationSec/3600).toFixed(2);
+    const durationMin=Math.round(s.durationSec/60);
+    const qBar=[
+      {pct:s.hdopPct.exc*100,col:'#00d4a0'},{pct:s.hdopPct.good*100,col:'#84cc16'},
+      {pct:s.hdopPct.fair*100,col:'#ffb340'},{pct:s.hdopPct.poor*100,col:'#ff4d6a'},
+    ];
+
+    html+=`<div class="day-card">
+      <div class="day-card-hdr">
+        <div class="day-date">${toItalyDateLabel(dk)}</div>
+        <div class="day-badges">
+          <span class="badge">${rows.length.toLocaleString()} punti</span>
+          <span class="badge">${durationHours}h lavorate</span>
+          <span class="badge">${sessions.length} sess.</span>
+          <span class="badge green">📏 ${fmtDist(s.distMeters)}</span>
+          <span class="badge ${hdopBadgeClass(s.hdopAvg)}">HDOP ${s.hdopAvg.toFixed(2)} — ${hdopLabel(s.hdopAvg)}</span>
+        </div>
+      </div>
+      <div class="day-body">`;
+
+    // GANTT
+    const dayStartH=new Date(s.startTs*1000).toLocaleString('sv',{timeZone:'Europe/Rome'}).split(' ')[1].split(':');
+    const minHour=Math.max(0,parseInt(dayStartH[0])-1);
+    const endH=new Date(s.endTs*1000).toLocaleString('sv',{timeZone:'Europe/Rome'}).split(' ')[1].split(':');
+    const maxHour=Math.min(24,parseInt(endH[0])+2);
+    const rangeMs=(maxHour-minHour)*3600000;
+
+    html+=`<div class="gantt-wrap"><div class="gantt-axis">`;
+    for(let h=minHour;h<=maxHour;h+=Math.ceil((maxHour-minHour)/6)){
+      const pct=((h-minHour)/(maxHour-minHour))*100;
+      html+=`<span class="gantt-tick-lbl" style="left:${pct}%">${String(h).padStart(2,'0')}:00</span>`;
+    }
+    html+=`</div><div class="gantt-rows">`;
+
+    sessions.forEach((sess,si) => {
+      const label=`Sess. ${si+1}`;
+      const sStart=new Date(sess[0].timestamp*1000);
+      const sEnd=new Date(sess[sess.length-1].timestamp*1000);
+      const dayBase=new Date(sStart.toLocaleDateString('sv',{timeZone:'Europe/Rome'})+'T'+String(minHour).padStart(2,'0')+':00:00');
+      const leftPct=((sStart-dayBase)/rangeMs)*100;
+      const widthPct=Math.max(1,((sEnd-sStart)/rangeMs)*100);
+      const durMin=Math.round((sess[sess.length-1].timestamp-sess[0].timestamp)/60);
+      const col=SESSION_COLORS[si%SESSION_COLORS.length];
+      const startLbl=toItalyTime(sess[0].timestamp);
+      const endLbl=toItalyTime(sess[sess.length-1].timestamp);
+      const sessDist=calcDistanceMeters(sess);
+
+      html+=`<div class="gantt-row">
+        <div class="gantt-lbl" title="${label}">${label}</div>
+        <div class="gantt-track">
+          <div class="gantt-bar" style="left:${leftPct}%;width:${widthPct}%;background:${col}80;border:1px solid ${col}"
+               title="${label}: ${startLbl} → ${endLbl} (${durMin} min) — ${fmtDist(sessDist)}">
+            ${widthPct>8?`<span class="gantt-bar-label">${startLbl}→${endLbl}</span>`:''}
+          </div>
+        </div>
+        <div class="gantt-dist" title="Distanza percorsa">📏 ${fmtDist(sessDist)}</div>
+      </div>`;
+    });
+
+    html+=`</div></div>`; // gantt
+
+    // HDOP bar
+    html+=`<div style="margin:12px 0 4px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">Qualità segnale GNSS</div>
+      <div class="quality-bar">${qBar.map(q=>`<div class="qb-seg" style="flex:${Math.max(0.1,q.pct)};background:${q.col}"></div>`).join('')}</div>
+      <div style="display:flex;gap:16px;font-size:10px;color:var(--muted);margin-top:4px">
+        <span style="color:#00d4a0">■ Ottimo ${(s.hdopPct.exc*100).toFixed(0)}%</span>
+        <span style="color:#84cc16">■ Buono ${(s.hdopPct.good*100).toFixed(0)}%</span>
+        <span style="color:#ffb340">■ Discreto ${(s.hdopPct.fair*100).toFixed(0)}%</span>
+        <span style="color:#ff4d6a">■ Scarso ${(s.hdopPct.poor*100).toFixed(0)}%</span>
+      </div>
+    </div>`;
+
+    // STATS GRID — ora include distanza giornaliera
+    html+=`<div class="day-stats">
+      <div class="ds"><div class="ds-lbl">Inizio</div><div class="ds-val" style="font-size:15px">${toItalyTime(s.startTs)}</div></div>
+      <div class="ds"><div class="ds-lbl">Fine</div><div class="ds-val" style="font-size:15px">${toItalyTime(s.endTs)}</div></div>
+      <div class="ds"><div class="ds-lbl">Durata</div><div class="ds-val">${durationMin}<span class="ds-unit"> min</span></div></div>
+      <div class="ds" style="border-color:rgba(0,212,160,.3)"><div class="ds-lbl" style="color:var(--green)">Distanza</div><div class="ds-val" style="color:var(--green);font-size:16px">${fmtDist(s.distMeters)}</div></div>
+      <div class="ds"><div class="ds-lbl">Quota media</div><div class="ds-val">${s.altAvg.toFixed(0)}<span class="ds-unit"> m</span></div></div>
+      <div class="ds"><div class="ds-lbl">Quota min</div><div class="ds-val">${s.altMin.toFixed(0)}<span class="ds-unit"> m</span></div></div>
+      <div class="ds"><div class="ds-lbl">Quota max</div><div class="ds-val">${s.altMax.toFixed(0)}<span class="ds-unit"> m</span></div></div>
+      <div class="ds"><div class="ds-lbl">Satelliti</div><div class="ds-val">${s.satAvg.toFixed(1)}</div></div>
+      <div class="ds"><div class="ds-lbl">Sessioni</div><div class="ds-val">${sessions.length}</div></div>
+    </div>`;
+
+    html+=`</div></div>`; // day-body, day-card
+  }
+
+  html+=`</div></div>`; // day-grid, section
+  document.getElementById('rpt-body').innerHTML=html;
+
+  // MAP
+  setTimeout(()=>{
+    if(rptMap){rptMap.remove();rptMap=null;}
+    rptMap=L.map('rpt-map',{zoomControl:true,preferCanvas:true});
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'©OpenStreetMap ©CartoDB',maxZoom:20}).addTo(rptMap);
+    const COLORS=['#00d4a0','#4d8fff','#ffb340','#ff6b8a','#a78bfa','#34d399','#f87171','#60a5fa'];
+    const allBounds=[];
+    dayKeys.forEach((dk,di)=>{
+      const col=COLORS[di%COLORS.length];
+      detectSessions(byDay[dk]).forEach(sess=>{
+        const step=Math.max(1,Math.floor(sess.length/400));
+        const pts=sess.filter((_,i)=>i%step===0).map(r=>[r.latitude,r.longitude]);
+        if(pts.length<2) return;
+        pts.forEach(p=>allBounds.push(p));
+        L.polyline(pts,{color:col,weight:2.5,opacity:.85}).addTo(rptMap);
+        const startR=sess[0], endR=sess[sess.length-1];
+        const sessDist=calcDistanceMeters(sess);
+        L.circleMarker([startR.latitude,startR.longitude],{radius:6,color:col,fillColor:col,fillOpacity:1,weight:2})
+          .bindPopup(`<div class="lp-name">${toItalyDateLabel(dk)}</div>
+            <div class="lp-row">▶ <b>${toItalyTime(startR.timestamp)}</b></div>
+            <div class="lp-row">⏹ <b>${toItalyTime(endR.timestamp)}</b></div>
+            <div class="lp-row">📏 <b>${fmtDist(sessDist)}</b></div>
+            <div class="lp-row">Punti: <b>${sess.length.toLocaleString()}</b></div>`)
+          .addTo(rptMap);
+      });
+    });
+    if(allBounds.length) rptMap.fitBounds(allBounds,{padding:[20,20]});
+  },100);
+}
+
+// ═══════════════════════════════════════════════════
+// EXPORT PDF
+// ═══════════════════════════════════════════════════
+async function exportPDF() {
+  if (!reportByDay || !reportAllRows) return;
+  const btn = document.getElementById('pdf-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generazione...';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = 210, margin = 14, contentW = W - margin * 2;
+
+    // ── PALETTE LIGHT ──
+    const C = {
+      white:    [255,255,255],
+      bgLight:  [248,249,252],
+      bgMid:    [240,243,248],
+      border:   [218,224,235],
+      text:     [28, 35, 50],
+      muted:    [100,112,135],
+      green:    [0,  185,138],
+      greenBg:  [235,252,247],
+      amber:    [217,119,6],
+      amberBg:  [255,247,235],
+      red:      [220,53, 69],
+      redBg:    [255,240,242],
+      blue:     [59, 130,246],
+      rowAlt:   [250,251,254],
+    };
+
+    // helper: set fill from array
+    const fill  = (arr) => doc.setFillColor(arr[0],arr[1],arr[2]);
+    const stroke= (arr) => doc.setDrawColor(arr[0],arr[1],arr[2]);
+    const text  = (arr) => doc.setTextColor(arr[0],arr[1],arr[2]);
+
+    const dayKeys = Object.keys(reportByDay).sort();
+    const totalRows = reportAllRows.length;
+    const totalDurationSec = dayKeys.reduce((a,dk)=>a+dayStats(reportByDay[dk]).durationSec,0);
+    const globalHdop = reportAllRows.reduce((a,r)=>a+r.hdop,0)/reportAllRows.length;
+    const globalSat  = reportAllRows.reduce((a,r)=>a+r.satellite_num,0)/reportAllRows.length;
+    const totalDist  = dayKeys.reduce((a,dk)=>a+dayStats(reportByDay[dk]).distMeters,0);
+    const now = new Date().toLocaleString('it-IT',{timeZone:'Europe/Rome',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+    let y = 0;
+
+    // ══════════════════════════════════════════
+    // HEADER BAND
+    // ══════════════════════════════════════════
+    fill(C.text); doc.rect(0,0,W,22,'F');
+    // green left accent bar
+    fill(C.green); doc.rect(0,0,4,22,'F');
+    text(C.green);
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text('GNSS REPORT GIORNALIERO', 9, 9);
+    text([180,190,210]);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+    doc.text(`v.1  ·  Generato il ${now}  ·  Ora Italia (UTC+2)`, 9, 15);
+    doc.text(`File: ${pendingFiles.map(f=>f.name).join('  ·  ')}`, 9, 20);
+    y = 28;
+
+    // ══════════════════════════════════════════
+    // KPI ROW
+    // ══════════════════════════════════════════
+    const kpis = [
+      {label:'GIORNI RILEVATI',  value:String(dayKeys.length),                  accent:C.green},
+      {label:'ORE LAVORATE',     value:(totalDurationSec/3600).toFixed(1)+' h', accent:C.blue},
+      {label:'DISTANZA TOTALE',  value:fmtDist(totalDist),                      accent:C.green},
+      {label:'PUNTI GPS',        value:(totalRows/1000).toFixed(1)+' k',        accent:C.amber},
+      {label:'SATELLITI MEDI',   value:globalSat.toFixed(1),                    accent:C.blue},
+      {label:'HDOP MEDIO',       value:globalHdop.toFixed(2),                   accent:globalHdop<=2?C.green:globalHdop<=5?C.amber:C.red},
+    ];
+    const kpiW = contentW / kpis.length;
+    kpis.forEach((k,i) => {
+      const x = margin + i*kpiW;
+      // card bg
+      fill(C.bgLight); stroke(C.border);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(x, y, kpiW-1.5, 16, 1.5, 1.5, 'FD');
+      // top accent line
+      fill(k.accent); doc.rect(x, y, kpiW-1.5, 1.2, 'F');
+      // label
+      text(C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+      doc.text(k.label, x+3, y+5.5);
+      // value
+      text(C.text); doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+      doc.text(k.value, x+3, y+13);
+    });
+    y += 22;
+
+    // ══════════════════════════════════════════
+    // ONE CARD PER DAY
+    // ══════════════════════════════════════════
+    for (const dk of dayKeys) {
+      const rows = reportByDay[dk];
+      const s = dayStats(rows);
+      const sessions = detectSessions(rows);
+      const durationMin = Math.round(s.durationSec/60);
+
+      // estimate height needed: header(10) + stats(28) + sessionsTable(10+sessions*7) + hdop(14) + gap(8)
+      const neededH = 10 + 28 + 10 + sessions.length*7 + 14 + 8;
+      if (y + neededH > 282) { doc.addPage(); y = margin; }
+
+      // ── DAY HEADER ──
+      fill(C.text); doc.rect(margin, y, contentW, 10, 'F');
+      fill(C.green); doc.rect(margin, y, 3, 10, 'F');
+      text(C.white); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      doc.text(toItalyDateLabel(dk), margin+6, y+6.8);
+      // right side summary
+      text([180,195,215]); doc.setFont('helvetica','normal'); doc.setFontSize(7);
+      const summ = `${rows.length.toLocaleString()} punti  ·  ${(s.durationSec/3600).toFixed(2)} h  ·  ${fmtDist(s.distMeters)}  ·  HDOP ${s.hdopAvg.toFixed(2)}`;
+      doc.text(summ, margin+contentW-2, y+6.8, {align:'right'});
+      y += 13;
+
+      // ── STATS GRID (2 rows × 4 cols) ──
+      const statItems = [
+        {l:'INIZIO',       v:toItalyTime(s.startTs)},
+        {l:'FINE',         v:toItalyTime(s.endTs)},
+        {l:'DURATA',       v:`${durationMin} min`},
+        {l:'DISTANZA',     v:fmtDist(s.distMeters), hi:true},
+        {l:'QUOTA MEDIA',  v:`${s.altAvg.toFixed(0)} m`},
+        {l:'QUOTA MIN',    v:`${s.altMin.toFixed(0)} m`},
+        {l:'QUOTA MAX',    v:`${s.altMax.toFixed(0)} m`},
+        {l:'SAT. MEDI',    v:s.satAvg.toFixed(1)},
+      ];
+      const nCols=4, cellW=contentW/nCols, cellH=12;
+      statItems.forEach((item,i) => {
+        const cx = margin + (i%nCols)*cellW;
+        const cy = y + Math.floor(i/nCols)*cellH;
+        fill(i%2===0 ? C.bgLight : C.white);
+        stroke(C.border); doc.setLineWidth(0.15);
+        doc.rect(cx, cy, cellW, cellH, 'FD');
+        text(C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+        doc.text(item.l, cx+3, cy+4.5);
+        if(item.hi) text(C.green); else text(C.text);
+        doc.setFont('helvetica','bold'); doc.setFontSize(9);
+        doc.text(item.v, cx+3, cy+10);
+      });
+      y += cellH*2 + 4;
+
+      // ── SESSIONS TABLE ──
+      if (y + 10 + sessions.length*7 > 282) { doc.addPage(); y = margin; }
+
+      // table header
+      const tCols = [
+        {label:'SESSIONE',  x:margin,             w:22},
+        {label:'INIZIO',    x:margin+22,           w:28},
+        {label:'FINE',      x:margin+50,           w:28},
+        {label:'DURATA',    x:margin+78,           w:24},
+        {label:'DISTANZA',  x:margin+102,          w:contentW-102},
+      ];
+      fill(C.bgMid); stroke(C.border); doc.setLineWidth(0.15);
+      doc.rect(margin, y, contentW, 7, 'FD');
+      text(C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6);
+      tCols.forEach(c => doc.text(c.label, c.x+2, y+4.8));
+      y += 7;
+
+      const SESSION_COLORS_PDF=[[0,185,138],[59,130,246],[217,119,6],[220,53,120],[124,58,237],[52,211,153]];
+      sessions.forEach((sess,si) => {
+        if(y+7>282){doc.addPage();y=margin;}
+        const rc = SESSION_COLORS_PDF[si%SESSION_COLORS_PDF.length];
+        const durMin = Math.round((sess[sess.length-1].timestamp-sess[0].timestamp)/60);
+        const sessDist = calcDistanceMeters(sess);
+
+        // row bg alternating
+        fill(si%2===0 ? C.white : C.rowAlt);
+        stroke(C.border); doc.setLineWidth(0.1);
+        doc.rect(margin, y, contentW, 7, 'FD');
+
+        // color dot for session
+        doc.setFillColor(rc[0],rc[1],rc[2]);
+        doc.circle(margin+4, y+3.5, 1.5, 'F');
+
+        text(C.text); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+        doc.text(`Sess. ${si+1}`, margin+8, y+4.8);
+
+        doc.setFont('helvetica','normal');
+        doc.text(toItalyTime(sess[0].timestamp),            tCols[1].x+2, y+4.8);
+        doc.text(toItalyTime(sess[sess.length-1].timestamp),tCols[2].x+2, y+4.8);
+        doc.text(`${durMin} min`,                           tCols[3].x+2, y+4.8);
+        // distance in green
+        doc.setFillColor(rc[0],rc[1],rc[2]);
+        doc.setFont('helvetica','bold');
+        doc.setTextColor(rc[0],rc[1],rc[2]);
+        doc.text(fmtDist(sessDist), tCols[4].x+2, y+4.8);
+        y += 7;
+      });
+      y += 3;
+
+      // ── HDOP QUALITY BAR ──
+      if(y+14>282){doc.addPage();y=margin;}
+      text(C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6);
+      doc.text('QUALITÀ SEGNALE GNSS', margin, y+4);
+      const qbarX=margin+38, qbarW=contentW-38, qbarH=4.5;
+      const segs=[
+        {pct:s.hdopPct.exc,  rgb:[0,185,138],   lbl:`Ottimo ${(s.hdopPct.exc*100).toFixed(0)}%`},
+        {pct:s.hdopPct.good, rgb:[132,204,22],   lbl:`Buono ${(s.hdopPct.good*100).toFixed(0)}%`},
+        {pct:s.hdopPct.fair, rgb:[217,119,6],    lbl:`Discreto ${(s.hdopPct.fair*100).toFixed(0)}%`},
+        {pct:s.hdopPct.poor, rgb:[220,53,69],    lbl:`Scarso ${(s.hdopPct.poor*100).toFixed(0)}%`},
+      ];
+      let qx=qbarX;
+      segs.forEach(seg=>{
+        const sw=Math.max(0.8,seg.pct*qbarW);
+        doc.setFillColor(seg.rgb[0],seg.rgb[1],seg.rgb[2]);
+        doc.rect(qx,y,sw,qbarH,'F');
+        qx+=sw;
+      });
+      // legend inline
+      let lx=qbarX;
+      doc.setFont('helvetica','normal'); doc.setFontSize(5.5);
+      segs.forEach(seg=>{
+        doc.setTextColor(seg.rgb[0],seg.rgb[1],seg.rgb[2]);
+        doc.text(seg.lbl, lx, y+qbarH+3.5);
+        lx+=30;
+      });
+      y += qbarH + 8;
+
+      // separator line
+      stroke(C.border); doc.setLineWidth(0.3);
+      doc.line(margin, y, margin+contentW, y);
+      y += 6;
+    }
+
+    // ══════════════════════════════════════════
+    // FOOTER ON EACH PAGE
+    // ══════════════════════════════════════════
+    const totalPages = doc.getNumberOfPages();
+    for(let i=1;i<=totalPages;i++){
+      doc.setPage(i);
+      // footer bar
+      fill(C.bgMid); doc.rect(0,287,W,10,'F');
+      stroke(C.border); doc.setLineWidth(0.2);
+      doc.line(0,287,W,287);
+      text(C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
+      doc.text(`GNSS Report v.1  ·  ${now}  ·  Ora Italia (UTC+2)`, margin, 292.5);
+      doc.text(`Pag. ${i} / ${totalPages}`, W-margin, 292.5, {align:'right'});
+    }
+
+    const fname = `GNSS_Report_${new Date().toLocaleDateString('sv',{timeZone:'Europe/Rome'}).replace(/-/g,'')}.pdf`;
+    doc.save(fname);
+
+  } catch(e) {
+    alert('Errore generazione PDF: '+e.message);
+    console.error(e);
+  } finally {
+    btn.disabled=false;
+    btn.textContent='⬇ Esporta PDF';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// BACK
+// ═══════════════════════════════════════════════════
+function backToUpload() {
+  document.getElementById('report-screen').style.display='none';
+  document.getElementById('upload-screen').style.display='flex';
+  if(rptMap){rptMap.remove();rptMap=null;}
+}
+</script>
+</body>
+</html>

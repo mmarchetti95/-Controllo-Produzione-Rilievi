@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controllo Produzione Rilievi — Portale Tool</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0b0f14;
+  --surface:  #131920;
+  --surface2: #1a2230;
+  --surface3: #1f2937;
+  --border:   #243044;
+  --border2:  #2e3d55;
+  --text:     #e8edf4;
+  --muted:    #6b7a90;
+  --dim:      #3d4f66;
+  --accent:   #4a9eff;
+  --sidebar-w: 260px;
+  --header-h:  56px;
+}
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column; }
+
+/* HEADER */
+.header {
+  height: var(--header-h); background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0; z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+.logo-badge {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, #4a9eff, #1a5fa8);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.logo-name { font-size: 14px; font-weight: 700; letter-spacing: -.3px; }
+.logo-sub  { font-size: 10px; color: var(--muted); }
+.header-spacer { flex: 1; }
+.header-meta { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.header-dot  { width: 6px; height: 6px; border-radius: 50%; background: #34d058; }
+
+/* LAYOUT */
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* SIDEBAR */
+.sidebar {
+  width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; transition: width .22s ease;
+}
+.sidebar.collapsed { width: 56px; }
+.sidebar-search { padding: 12px 10px 6px; flex-shrink: 0; }
+.sidebar-search input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 11px; color: var(--text); font-size: 12px; outline: none;
+  transition: border-color .15s;
+}
+.sidebar-search input:focus { border-color: var(--border2); }
+.sidebar-search input::placeholder { color: var(--dim); }
+.sidebar.collapsed .sidebar-search { display: none; }
+
+.sidebar-scroll { flex: 1; overflow-y: auto; padding: 4px 0 12px; }
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.cat-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--dim); padding: 12px 14px 4px; white-space: nowrap;
+}
+.sidebar.collapsed .cat-label { display: none; }
+
+.tool-btn {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 1px 6px;
+  border-radius: 8px; cursor: pointer; color: var(--muted);
+  transition: background .12s, color .12s;
+  border: none; background: none; width: calc(100% - 12px); text-align: left;
+}
+.tool-btn:hover { background: var(--surface2); color: var(--text); }
+.tool-btn.active { background: var(--surface3); color: var(--text); }
+
+.tool-icon-wrap {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--surface2); font-size: 16px;
+  transition: border-color .12s;
+}
+.tool-btn.active .tool-icon-wrap { border-color: var(--accent); }
+.tool-info { overflow: hidden; flex: 1; }
+.tool-info-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-info-sub  { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.sidebar.collapsed .tool-info { display: none; }
+.sidebar.collapsed .tool-btn { margin: 2px 8px; width: calc(100% - 16px); justify-content: center; }
+
+.sidebar-footer { padding: 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.collapse-btn {
+  display: flex; align-items: center; gap: 8px; background: none; border: none;
+  color: var(--muted); cursor: pointer; font-size: 12px; padding: 7px 5px;
+  border-radius: 6px; width: 100%; transition: color .12s, background .12s;
+}
+.collapse-btn:hover { color: var(--text); background: var(--surface2); }
+.collapse-btn i { font-size: 17px; flex-shrink: 0; transition: transform .22s ease; }
+.sidebar.collapsed .collapse-btn i { transform: rotate(180deg); }
+.sidebar.collapsed .collapse-btn span { display: none; }
+
+/* MAIN */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* CONTENT AREA — scroll */
+.content { flex: 1; overflow-y: auto; padding: 32px 36px; }
+.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* WELCOME */
+.welcome-title { font-size: 22px; font-weight: 700; letter-spacing: -.5px; margin-bottom: 6px; }
+.welcome-sub   { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 32px; max-width: 480px; }
+
+/* CATEGORY SECTIONS */
+.section { margin-bottom: 36px; }
+.section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--dim); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.section-title::after { content:''; flex:1; height:1px; background: var(--border); }
+
+/* TOOL CARDS GRID */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+
+.tool-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 18px 16px; cursor: pointer;
+  transition: border-color .15s, background .15s, transform .1s;
+  display: flex; flex-direction: column; gap: 12px;
+  text-decoration: none; color: inherit;
+}
+.tool-card:hover { border-color: var(--border2); background: var(--surface2); transform: translateY(-1px); }
+.tool-card:active { transform: translateY(0); }
+
+.card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.card-icon {
+  width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; font-size: 19px; background: var(--surface2); border: 1px solid var(--border);
+}
+.card-arrow { color: var(--dim); font-size: 14px; margin-top: 2px; }
+.tool-card:hover .card-arrow { color: var(--muted); }
+
+.card-body {}
+.card-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+.card-sub  { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+.card-footer {
+  display: flex; align-items: center; gap: 6px; padding-top: 10px;
+  border-top: 1px solid var(--border); margin-top: auto;
+}
+.card-badge {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  background: var(--surface3); color: var(--muted); border: 1px solid var(--border);
+}
+.open-label { font-size: 10px; color: var(--dim); margin-left: auto; }
+
+/* SEARCH RESULTS */
+.search-results { display: none; }
+.search-results.visible { display: block; }
+.main-content { display: block; }
+.main-content.hidden { display: none; }
+
+/* EMPTY STATE */
+.empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+.empty i { font-size: 36px; color: var(--dim); display: block; margin-bottom: 12px; }
+
+/* MOBILE */
+@media (max-width: 640px) {
+  .sidebar { position: fixed; top: var(--header-h); left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); transition: transform .22s ease; width: 260px !important; }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-overlay { display: none; position: fixed; inset: 0; top: var(--header-h); background: rgba(0,0,0,.55); z-index: 199; }
+  .mobile-overlay.visible { display: block; }
+  .mobile-menu-btn { display: flex !important; }
+  .content { padding: 20px 16px; }
+}
+.mobile-menu-btn {
+  display: none; align-items: center; justify-content: center; width: 34px; height: 34px;
+  border-radius: 7px; background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; font-size: 18px;
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <button class="mobile-menu-btn" onclick="toggleMobile()" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+  <a class="logo" href="#">
+    <div class="logo-badge">CP</div>
+    <div>
+      <div class="logo-name">Controllo Produzione Rilievi</div>
+      <div class="logo-sub">Strumenti operativi</div>
+    </div>
+  </a>
+  <div class="header-spacer"></div>
+  <div class="header-meta"><div class="header-dot"></div><span>v1.0</span></div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-search">
+      <input type="text" id="search-input" placeholder="Cerca tool…" oninput="doSearch(this.value)" autocomplete="off">
+    </div>
+    <div class="sidebar-scroll" id="sidebar-nav"></div>
+    <div class="sidebar-footer">
+      <button class="collapse-btn" onclick="toggleCollapse()">
+        <i class="ti ti-layout-sidebar-left-collapse"></i>
+        <span>Riduci sidebar</span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="content" id="content">
+
+      <!-- WELCOME + CATEGORIE -->
+      <div id="main-content" class="main-content">
+        <div class="welcome-title">Buongiorno 👋</div>
+        <div class="welcome-sub">Seleziona un tool per aprirlo. Ogni tool si apre in una nuova scheda così hai sempre il portale disponibile.</div>
+        <div id="categories-container"></div>
+      </div>
+
+      <!-- RISULTATI RICERCA -->
+      <div id="search-results" class="search-results">
+        <div class="section-title">Risultati ricerca</div>
+        <div class="cards-grid" id="search-grid"></div>
+        <div class="empty" id="search-empty" style="display:none">
+          <i class="ti ti-search-off"></i>
+          Nessun tool trovato
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="mobile-overlay" id="mobile-overlay" onclick="toggleMobile()"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  CONFIG — modifica qui per aggiungere tool
+// ═══════════════════════════════════════════════
+const TOOLS = [
+  {
+    id: "mobile-mapping",
+    nome: "Mobile Mapping",
+    sub: "Dashboard produzione",
+    icona: "ti-car",
+    cat: "Rilievo",
+    colore: "#f0a500",
+    url: "https://eagleprojectssrl.sharepoint.com/sites/ControlloProduzioneRilievi/Documenti%20condivisi/portale/tools/dashboard_mobile_mapping v2.html"
+  },
+  {
+    id: "drone-survey",
+    nome: "Drone Survey",
+    sub: "Rilievi UAV",
+    icona: "ti-drone",
+    cat: "Rilievo",
+    colore: "#00d4aa",
+    url: "https://eagleprojectssrl.sharepoint.com/sites/ControlloProduzioneRilievi/Documenti%20condivisi/portale/tools/drone_survey_dashboard.html"
+  },
+  {
+    id: "gnss-report",
+    nome: "GNSS Report",
+    sub: "Report giornaliero",
+    icona: "ti-satellite",
+    cat: "Report",
+    colore: "#4d8fff",
+    url: "https://eagleprojectssrl.sharepoint.com/sites/ControlloProduzioneRilievi/Documenti%20condivisi/portale/tools/gnss_report_v1.html"
+  },
+  {
+    id: "produzione-atex",
+    nome: "Produzione ATEX",
+    sub: "GR v2",
+    icona: "ti-flame",
+    cat: "Produzione",
+    colore: "#1a5fa8",
+    url: "https://eagleprojectssrl.sharepoint.com/sites/ControlloProduzioneRilievi/Documenti%20condivisi/portale/tools/Produzione ATEX - v1.html"
+  },
+  {
+    id: "report-wo",
+    nome: "Report WO",
+    sub: "Work Orders",
+    icona: "ti-clipboard-list",
+    cat: "Produzione",
+    colore: "#a78bfa",
+    url: "https://eagleprojectssrl.sharepoint.com/sites/ControlloProduzioneRilievi/Documenti%20condivisi/portale/tools/report_produzione_WO_v12_1.html"
+  },
+];
+// ═══════════════════════════════════════════════
+
+function openTool(tool) {
+  // Marca attivo nella sidebar
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`[data-id="${tool.id}"]`);
+  if (btn) btn.classList.add('active');
+  // Apre in nuova scheda
+  window.open(tool.url, '_blank');
+}
+
+function makeCard(tool) {
+  const a = document.createElement('a');
+  a.className = 'tool-card';
+  a.href = tool.url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.innerHTML = `
+    <div class="card-top">
+      <div class="card-icon" style="color:${tool.colore}"><i class="ti ${tool.icona}"></i></div>
+      <i class="ti ti-arrow-up-right card-arrow"></i>
+    </div>
+    <div class="card-body">
+      <div class="card-name">${tool.nome}</div>
+      <div class="card-sub">${tool.sub}</div>
+    </div>
+    <div class="card-footer">
+      <span class="card-badge">${tool.cat}</span>
+      <span class="open-label">Apri in nuova scheda ↗</span>
+    </div>`;
+  return a;
+}
+
+// Build sidebar
+(function buildSidebar() {
+  const nav = document.getElementById('sidebar-nav');
+  const cats = [...new Set(TOOLS.map(t => t.cat))];
+  cats.forEach(cat => {
+    const lbl = document.createElement('div');
+    lbl.className = 'cat-label'; lbl.textContent = cat;
+    nav.appendChild(lbl);
+    TOOLS.filter(t => t.cat === cat).forEach(tool => {
+      const btn = document.createElement('a');
+      btn.className = 'tool-btn';
+      btn.dataset.id = tool.id;
+      btn.href = tool.url;
+      btn.target = '_blank';
+      btn.rel = 'noopener';
+      btn.innerHTML = `
+        <div class="tool-icon-wrap" style="color:${tool.colore}"><i class="ti ${tool.icona}"></i></div>
+        <div class="tool-info">
+          <div class="tool-info-name">${tool.nome}</div>
+          <div class="tool-info-sub">${tool.sub}</div>
+        </div>`;
+      nav.appendChild(btn);
+    });
+  });
+})();
+
+// Build main grid by category
+(function buildMain() {
+  const container = document.getElementById('categories-container');
+  const cats = [...new Set(TOOLS.map(t => t.cat))];
+  cats.forEach(cat => {
+    const section = document.createElement('div');
+    section.className = 'section';
+    const title = document.createElement('div');
+    title.className = 'section-title'; title.textContent = cat;
+    section.appendChild(title);
+    const grid = document.createElement('div');
+    grid.className = 'cards-grid';
+    TOOLS.filter(t => t.cat === cat).forEach(tool => grid.appendChild(makeCard(tool)));
+    section.appendChild(grid);
+    container.appendChild(section);
+  });
+})();
+
+// Search
+function doSearch(q) {
+  const qL = q.trim().toLowerCase();
+  const mainContent = document.getElementById('main-content');
+  const searchResults = document.getElementById('search-results');
+  const searchGrid = document.getElementById('search-grid');
+  const searchEmpty = document.getElementById('search-empty');
+
+  // Sidebar filter
+  document.querySelectorAll('.tool-btn').forEach(b => {
+    const name = b.querySelector('.tool-info-name')?.textContent.toLowerCase() || '';
+    b.style.display = (!qL || name.includes(qL)) ? '' : 'none';
+  });
+  document.querySelectorAll('.cat-label').forEach(lbl => {
+    const next = lbl.nextElementSibling;
+    lbl.style.display = next ? '' : 'none';
+  });
+
+  if (!qL) {
+    mainContent.classList.remove('hidden');
+    searchResults.classList.remove('visible');
+    return;
+  }
+
+  mainContent.classList.add('hidden');
+  searchResults.classList.add('visible');
+  searchGrid.innerHTML = '';
+
+  const results = TOOLS.filter(t =>
+    t.nome.toLowerCase().includes(qL) || t.sub.toLowerCase().includes(qL) || t.cat.toLowerCase().includes(qL)
+  );
+
+  if (results.length === 0) {
+    searchGrid.style.display = 'none';
+    searchEmpty.style.display = 'block';
+  } else {
+    searchGrid.style.display = 'grid';
+    searchEmpty.style.display = 'none';
+    results.forEach(tool => searchGrid.appendChild(makeCard(tool)));
+  }
+}
+
+let collapsed = false;
+function toggleCollapse() {
+  collapsed = !collapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed', collapsed);
+}
+function toggleMobile() {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+  document.getElementById('mobile-overlay').classList.toggle('visible');
+}
+function closeMobile() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('mobile-overlay').classList.remove('visible');
+}
+</script>
+</body>
+</html>
