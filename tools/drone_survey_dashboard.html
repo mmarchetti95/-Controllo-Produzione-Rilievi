@@ -191,7 +191,7 @@ header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Carica .zip
           </button>
-          <button class="drop-btn secondary" onclick="document.getElementById('input-files').click()">
+          <button class="drop-btn secondary" onclick="pickFolder()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Seleziona cartella
           </button>
@@ -474,6 +474,107 @@ document.getElementById('input-files').addEventListener('change', e => {
   setTimeout(() => runFiles(f), 80);
   e.target.value='';
 });
+
+// ══════════════════════════════════════════════════════════
+//  SELEZIONE CARTELLA — File System Access API con progress live
+// ══════════════════════════════════════════════════════════
+// PERCHÉ: <input webkitdirectory> costringe il browser a scansionare TUTTA
+// la cartella (ricorsivamente) prima ancora di avvisare la nostra pagina.
+// Su una cartella di rete/VPN con migliaia di file questa scansione può
+// durare a lungo e — dato che è gestita internamente dal browser — non
+// possiamo mostrare nessuna barra di progresso durante quella fase: sembra
+// che la pagina si sia bloccata, anche se in realtà il browser sta ancora
+// lavorando in background.
+//
+// La File System Access API (showDirectoryPicker) ci dà il controllo diretto
+// sulla scansione: la facciamo noi file per file, quindi possiamo aggiornare
+// un contatore live ("Scansione… 340 foto trovate") MENTRE la cartella viene
+// letta, invece di aspettare al buio che il browser finisca da solo.
+// Supportata da Chrome/Edge (che è quanto si usa in ambiente M365); se non
+// disponibile, ricade automaticamente sul metodo classico con <input>.
+async function pickFolder() {
+  if (!window.showDirectoryPicker) {
+    // Fallback per browser che non supportano la File System Access API
+    document.getElementById('input-files').click();
+    return;
+  }
+  let dirHandle;
+  try {
+    dirHandle = await window.showDirectoryPicker();
+  } catch (err) {
+    return; // utente ha annullato la selezione
+  }
+
+  hideDrop();
+  document.getElementById('progress-overlay').classList.add('show');
+  document.getElementById('prog-fill').style.width = '0%';
+  document.getElementById('prog-pct').textContent = '0%';
+  document.getElementById('prog-total').textContent = '…';
+  document.getElementById('prog-done').textContent = '0';
+  document.getElementById('prog-ok').textContent = '0';
+  document.getElementById('prog-skip').textContent = '0';
+  document.getElementById('prog-eta').textContent = '…';
+  document.getElementById('prog-speed').textContent = '…';
+  document.getElementById('prog-log').innerHTML = '';
+  document.getElementById('prog-label').textContent = 'Scansione cartella in corso…';
+
+  const files = [];
+  let scanned = 0;
+  const scanStart = Date.now();
+
+  // Cammina la cartella ricorsivamente, un livello alla volta.
+  // Ogni file JPEG trovato viene aggiunto subito; il contatore live
+  // dà un riscontro reale invece del "silenzio" del vecchio input nativo.
+  async function walk(handle, relPath) {
+    for await (const entry of handle.values()) {
+      const rel = relPath ? relPath + '/' + entry.name : entry.name;
+      if (entry.kind === 'file') {
+        if (isJpeg(entry)) {
+          try {
+            const file = await entry.getFile();
+            // Portiamo dietro il percorso relativo (equivalente a webkitRelativePath)
+            // così il raggruppamento per cartella funziona come prima.
+            Object.defineProperty(file, 'webkitRelativePath', { value: rel, configurable: true });
+            files.push(file);
+          } catch (e) {
+            console.warn('Impossibile leggere', rel, e.message);
+          }
+          scanned++;
+          if (scanned % 15 === 0) {
+            const elapsed = (Date.now() - scanStart) / 1000;
+            const spd = elapsed > 0 ? (scanned / elapsed).toFixed(0) : '…';
+            document.getElementById('prog-label').textContent = `Scansione cartella… ${scanned} foto trovate`;
+            document.getElementById('prog-done').textContent = scanned;
+            document.getElementById('prog-speed').textContent = spd;
+            await yieldUI();
+          }
+        }
+      } else if (entry.kind === 'directory') {
+        await walk(entry, rel);
+      }
+    }
+  }
+
+  try {
+    await walk(dirHandle, '');
+  } catch (err) {
+    console.error(err);
+    alert('Errore durante la scansione della cartella: ' + err.message);
+    document.getElementById('progress-overlay').classList.remove('show');
+    showDrop();
+    return;
+  }
+
+  if (!files.length) {
+    alert('Nessuna immagine JPEG trovata nella cartella selezionata.');
+    document.getElementById('progress-overlay').classList.remove('show');
+    showDrop();
+    return;
+  }
+
+  // Scansione finita: passiamo alla fase di lettura EXIF (progress bar "vera")
+  runFiles(files);
+}
 
 function isJpeg(f) { return /\.(jpe?g)$/i.test(f.name); }
 
