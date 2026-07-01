@@ -639,19 +639,43 @@ async function runFiles(files) {
 
   const layerData = {};
   for (const [folder, flist] of Object.entries(groups)) {
-    const photos = [];
-    for (const f of flist) {
+    const photos = await processFilesParallel(flist);
+    if (photos.length) layerData[folder] = photos;
+  }
+
+  addLayers(layerData);
+  endProgress();
+}
+
+// ── Numero di letture file eseguite in parallelo ──
+// Su condivisioni di rete/VPN il collo di bottiglia è la LATENZA di ogni
+// singola apertura file, non la CPU: leggendo più file in contemporanea
+// il tempo totale crolla drasticamente (da sequenziale N*latenza a ~N/CONCURRENCY*latenza).
+// 12 è un buon compromesso: abbastanza da saturare la connessione VPN senza
+// sovraccaricare il file server con troppe richieste simultanee.
+const READ_CONCURRENCY = 12;
+
+// Elabora un elenco di file con un pool di worker paralleli.
+// Ogni worker prende il prossimo file libero dalla coda finché non finiscono;
+// così le letture di rete lente si sovrappongono invece di accodarsi una dopo l'altra.
+async function processFilesParallel(flist, concurrency = READ_CONCURRENCY) {
+  const photos = [];
+  let idx = 0;
+
+  async function worker() {
+    while (idx < flist.length) {
+      const f = flist[idx++];
       const exif = await parseEXIF(f);
       const ok = !!(exif && exif.lat && exif.lon);
       if (ok) photos.push(buildPhoto(exif, f.name));
       tickProg(f.name, ok);
       if (pDone % 20 === 0) await yieldUI();
     }
-    if (photos.length) layerData[folder] = photos;
   }
 
-  addLayers(layerData);
-  endProgress();
+  const workerCount = Math.min(concurrency, flist.length) || 1;
+  await Promise.all(Array.from({length: workerCount}, worker));
+  return photos;
 }
 
 function buildPhoto(exif, fname) {
