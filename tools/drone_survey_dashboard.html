@@ -166,6 +166,7 @@ header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20
     <div class="panel-head">
       <span class="panel-title">Layer <span id="active-count-badge"></span></span>
       <div class="layer-actions">
+        <button class="tiny-btn" onclick="pickFolders()" title="Aggiungi altre cartelle a questo rilievo">+ AGGIUNGI</button>
         <button class="tiny-btn" onclick="toggleAll(true)">TUTTI</button>
         <button class="tiny-btn" onclick="toggleAll(false)">NESSUNO</button>
       </div>
@@ -191,9 +192,9 @@ header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Carica .zip
           </button>
-          <button class="drop-btn secondary" onclick="pickFolder()">
+          <button class="drop-btn secondary" onclick="pickFolders()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            Seleziona cartella
+            Seleziona cartelle
           </button>
         </div>
       </div>
@@ -490,17 +491,10 @@ dropBox.addEventListener('drop', e => {
 });
 
 document.getElementById('input-zip').addEventListener('change', e => { if (e.target.files[0]) runZip(e.target.files[0]); e.target.value=''; });
-document.getElementById('input-files').addEventListener('change', e => {
-  const f=[...e.target.files].filter(isJpeg);
-  if (!f.length) return;
-  // Mostra subito feedback visivo — importante su condivisioni di rete lente (VPN/fileserver)
-  // dove il browser impiega secondi prima di avere i File objects pronti
-  hideDrop();
-  showScanStart(f.length);
-  // Piccolo delay per permettere al DOM di aggiornarsi prima di iniziare l'I/O
-  setTimeout(() => runFiles(f), 80);
-  e.target.value='';
-});
+// Nota: l'input#input-files non ha più un listener statico — viene gestito
+// dinamicamente da pickOneFolderClassic() (fallback per browser senza File
+// System Access API), che aggiunge/rimuove il proprio listener ad ogni
+// chiamata così da poter essere riusato nel ciclo di selezione multipla.
 
 // ══════════════════════════════════════════════════════════
 //  SELEZIONE CARTELLA — File System Access API con progress live
@@ -519,17 +513,42 @@ document.getElementById('input-files').addEventListener('change', e => {
 // letta, invece di aspettare al buio che il browser finisca da solo.
 // Supportata da Chrome/Edge (che è quanto si usa in ambiente M365); se non
 // disponibile, ricade automaticamente sul metodo classico con <input>.
-async function pickFolder() {
+// ══════════════════════════════════════════════════════════
+//  SELEZIONE MULTIPLA DI CARTELLE
+// ══════════════════════════════════════════════════════════
+// I sistemi operativi non permettono di scegliere più cartelle in un'unica
+// finestra nativa (è un limite del picker del sistema, non del browser).
+// Simuliamo la selezione multipla con un ciclo: dopo ogni cartella caricata
+// chiediamo se aggiungerne un'altra. I nuovi dati si sommano sempre a quelli
+// già presenti sulla mappa — addLayers() non cancella mai i layer esistenti,
+// quindi questo funziona sia al primo caricamento sia per aggiungere dati
+// in un secondo momento a un rilievo già aperto.
+async function pickFolders() {
+  let count = 0;
+  while (true) {
+    const ok = await pickOneFolder();
+    if (!ok) break; // utente ha annullato, o errore già segnalato
+    count++;
+    const again = confirm('Cartella aggiunta (' + count + ' finora).\nVuoi selezionare un\'altra cartella da aggiungere?');
+    if (!again) break;
+  }
+  if (count === 0) showDrop(); // nessuna cartella caricata: torna alla schermata iniziale
+}
+
+// Seleziona e processa UNA cartella. Ritorna true se i dati sono stati
+// aggiunti correttamente, false se l'utente ha annullato o non ci sono
+// foto valide (in questo caso l'errore è già stato mostrato).
+async function pickOneFolder() {
   if (!window.showDirectoryPicker) {
-    // Fallback per browser che non supportano la File System Access API
-    document.getElementById('input-files').click();
-    return;
+    // Fallback per browser che non supportano la File System Access API:
+    // apriamo l'input classico e aspettiamo la sua risposta come una Promise.
+    return await pickOneFolderClassic();
   }
   let dirHandle;
   try {
     dirHandle = await window.showDirectoryPicker();
   } catch (err) {
-    return; // utente ha annullato la selezione
+    return false; // utente ha annullato la selezione
   }
 
   hideDrop();
@@ -588,19 +607,42 @@ async function pickFolder() {
     console.error(err);
     alert('Errore durante la scansione della cartella: ' + err.message);
     document.getElementById('progress-overlay').classList.remove('show');
-    showDrop();
-    return;
+    return false;
   }
 
   if (!files.length) {
     alert('Nessuna immagine JPEG trovata nella cartella selezionata.');
     document.getElementById('progress-overlay').classList.remove('show');
-    showDrop();
-    return;
+    return false;
   }
 
-  // Scansione finita: passiamo alla fase di lettura EXIF (progress bar "vera")
-  runFiles(files);
+  // Scansione finita: passiamo alla fase di lettura EXIF (progress bar "vera").
+  // Aspettiamo il completamento prima di tornare, così il ciclo di selezione
+  // multipla chiede "un'altra cartella?" solo a dati già aggiunti alla mappa.
+  await runFiles(files);
+  return true;
+}
+
+// Fallback classico (browser senza File System Access API, es. Firefox):
+// riusa l'input <input webkitdirectory> esistente, ma wrappato in una
+// Promise così può essere usato dal ciclo di selezione multipla.
+function pickOneFolderClassic() {
+  return new Promise(resolve => {
+    const input = document.getElementById('input-files');
+    const onChange = async (e) => {
+      input.removeEventListener('change', onChange);
+      const f = [...e.target.files].filter(isJpeg);
+      e.target.value = '';
+      if (!f.length) { resolve(false); return; }
+      hideDrop();
+      showScanStart(f.length);
+      await new Promise(r => setTimeout(r, 80));
+      await runFiles(f);
+      resolve(true);
+    };
+    input.addEventListener('change', onChange);
+    input.click();
+  });
 }
 
 function isJpeg(f) { return /\.(jpe?g)$/i.test(f.name); }
