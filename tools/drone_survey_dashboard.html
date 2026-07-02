@@ -250,10 +250,27 @@ header{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20
 // ══════════════════════════════════════════════════════════
 //  EXIF PARSER — legge solo header JPEG, niente librerie
 // ══════════════════════════════════════════════════════════
+// ── Lettura EXIF "smart" a due velocità ──
+// La stragrande maggioranza delle foto ha i tag GPS/data entro i primi 20-30KB
+// (subito dopo l'inizio del JPEG). Prima tentiamo con un buffer piccolo (64KB):
+// se basta, abbiamo risparmiato ~4x banda rispetto a leggere sempre 256KB.
+// Solo se il file ha un blocco XMP insolitamente esteso (alcuni droni) e i dati
+// risultano troncati, rileggiamo con il buffer grande — ma solo per quei casi.
+const EXIF_FAST_SIZE = 65536;   // 64KB — copre quasi tutti i casi
+const EXIF_FULL_SIZE = 262144;  // 256KB — ripiego per i casi limite
+
 async function parseEXIF(file) {
+  let result = await parseEXIFFromSlice(file, EXIF_FAST_SIZE);
+  if (result === 'RETRY') {
+    result = await parseEXIFFromSlice(file, EXIF_FULL_SIZE);
+    if (result === 'RETRY') result = null;
+  }
+  return result;
+}
+
+async function parseEXIFFromSlice(file, sliceSize) {
   try {
-    // Leggi solo i primi 256KB — basta sempre per gli header
-    const buf = await readSlice(file, 0, 262144);
+    const buf = await readSlice(file, 0, sliceSize);
     const u8 = new Uint8Array(buf);
 
     // Verifica JPEG
@@ -261,6 +278,7 @@ async function parseEXIF(file) {
 
     let exifData = null;
     let xmpStr = null;
+    let truncated = false;
     let pos = 2;
 
     // Scansiona i segmenti APP del JPEG
@@ -272,6 +290,13 @@ async function parseEXIF(file) {
       if (segLen < 2) break;
       const dataOff = pos + 4;
       const dataLen = segLen - 2;
+
+      if (dataOff + dataLen > u8.length) {
+        // Il segmento continua oltre il buffer letto: dati insufficienti.
+        // Se stiamo usando il buffer piccolo, chiediamo un rilettura più ampia.
+        truncated = true;
+        break;
+      }
 
       if (marker === 0xE1 && dataLen > 6) {
         // APP1: EXIF o XMP
@@ -287,6 +312,8 @@ async function parseEXIF(file) {
       }
       pos += 2 + segLen;
     }
+
+    if (truncated && sliceSize < EXIF_FULL_SIZE) return 'RETRY';
 
     const result = {};
 
@@ -601,6 +628,7 @@ function showScanStart(count) {
 
 function initProgress(total) {
   pStart=Date.now(); pDone=0; pTotal=total; pOk=0; pSkip=0;
+  lastUIUpdate = 0;
   document.getElementById('progress-overlay').classList.add('show');
   ['prog-done','prog-ok','prog-skip'].forEach(id => document.getElementById(id).textContent='0');
   document.getElementById('prog-total').textContent = total;
@@ -612,9 +640,24 @@ function initProgress(total) {
   document.getElementById('prog-label').textContent = 'Avvio…';
 }
 
+// Aggiorniamo il DOM al massimo ogni 100ms invece che ad ogni singola foto:
+// con 10.000 foto, scrivere 7 nodi DOM + creare/rimuovere una riga di log
+// per OGNI file significa ~100.000 operazioni sincrone sul thread principale —
+// il vero motivo per cui l'interfaccia sembrava "pesante". I contatori interni
+// (pDone/pOk/pSkip) restano comunque sempre precisi ad ogni chiamata; cambia
+// solo quanto spesso li disegniamo a schermo.
+let lastUIUpdate = 0;
+const UI_THROTTLE_MS = 100;
+
 function tickProg(name, hasGps) {
   pDone++;
   if (hasGps) pOk++; else pSkip++;
+
+  const now = Date.now();
+  const isLast = pDone === pTotal;
+  if (!isLast && now - lastUIUpdate < UI_THROTTLE_MS) return; // salta il disegno, solo contatori
+  lastUIUpdate = now;
+
   const pct = Math.round(pDone/pTotal*100);
   document.getElementById('prog-fill').style.width = pct+'%';
   document.getElementById('prog-pct').textContent = pct+'%';
@@ -622,7 +665,7 @@ function tickProg(name, hasGps) {
   document.getElementById('prog-ok').textContent = pOk;
   document.getElementById('prog-skip').textContent = pSkip;
   document.getElementById('prog-label').textContent = pDone+'/'+pTotal+' — '+name;
-  const elapsed = (Date.now()-pStart)/1000;
+  const elapsed = (now-pStart)/1000;
   if (elapsed > 0.5) {
     const spd = pDone/elapsed;
     const eta = Math.max(0, Math.round((pTotal-pDone)/spd));
